@@ -5,10 +5,6 @@ import datetime
 import sys
 sys.path.append("../")
 
-try:
-    from decelium_wallet.decelium_wallet.databases.nosqlite import nosqlite
-except:
-    from decelium_wallet.databases.nosqlite import nosqlite
 import time
 import pprint
 if __name__ == "__main__":

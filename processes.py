@@ -5,7 +5,7 @@ class Processes:
     def __init__(self):
         pass
 
-    def run(self, command:str,job_name:str,job_id:str=None,envs:dict=None):
+    def run(self, command:str,job_name:str,job_id:str=None,envs:dict=None,cwd=None,logdir=None,logfile=None):
         """Starts a new process based on the given command."""
         if job_id == None:
             job_id = job_name
@@ -21,8 +21,24 @@ class Processes:
         #    prefix = prefix + f"{key}={value} "
         #print("start() "+prefix+command)
         #process = subprocess.Popen(prefix+command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        process = subprocess.Popen(command.split(), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,env=envs)
-         
+        if logfile and logdir:
+            command = f" {command} >> {logdir}/{logfile}_out.txt 2>> {logdir}/{logfile}_errors.txt "        
+            #command = f"nohup {command} >> {logdir}/{logfile}_out.txt 2>> {logdir}/{logfile}_errors.txt &"        
+        '''
+        if cwd:
+            print("running command with cwd "+ command + " in "+cwd)
+            process = subprocess.Popen(command.split(), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,env=envs,cwd=cwd)
+        else:
+            print("running command without cwd "+ command)
+            process = subprocess.Popen(command.split(), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,env=envs)
+        '''
+
+        if cwd:
+            print("running command with cwd "+ command + " in "+cwd)            
+            process = subprocess.Popen(command, shell=True, text=True, env=envs, cwd=cwd,preexec_fn=os.setsid)
+        else:
+            process = subprocess.Popen(command, shell=True, text=True, env=envs,preexec_fn=os.setsid)
+        
         proc = self.find(job_id)
         if proc: 
             return proc
@@ -35,11 +51,13 @@ class Processes:
         return None
         
     def stop(self, job_id):
-        proc = self.find(job_id)
-        print("stopping",proc)
-        if proc:
-            proc.terminate()
-            proc.wait()  
+        for i in [1,2]:
+            # Since we run in shell mode, we will have to clean up the shell, too
+            proc = self.find(job_id)
+            print("stopping ",proc)
+            if proc:
+                proc.terminate()
+                proc.wait()  
         return True
         
     def list(self):

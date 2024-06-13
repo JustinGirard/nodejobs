@@ -24,6 +24,8 @@ class JobRecord(BaseData):
                     'last_update':datetime.datetime,
                     }
         optional = {
+                    'dirname':str,
+                    'cwd':str,
                     'logdir':str,
                     'logfile':str,
         }
@@ -32,9 +34,11 @@ class JobRecord(BaseData):
 class JobFilter(BaseData):
     def get_keys(self):
         optional = {'self_id':str,
+                     'dirname':str,
                     'logdir':str,
                     'logfile':str,
                     'status':str,
+                    'cwd':str,                    
                     'last_update':datetime.datetime,
                     }
         return {},optional

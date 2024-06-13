@@ -14,25 +14,49 @@ print("all done")
 # - [ ] Read logfile error input
 # - [ ] Tail ongoing output
 # - [ ] update process status in DB 
-
-from processes import Processes
-from jobdb import JobDB
+try:
+    from processes import Processes
+    from jobdb import JobDB
+except:
+    from .processes import Processes
+    from .jobdb import JobDB
+    
 class Jobs():
     def __init__(self):
         self.processes = Processes()
         self.jobdb = JobDB()
         
-    def run(self,command:str,job_name:str,job_id:str=None):
+    def __find(self,job_id:str=None,job_name:str=None):
+        assert job_id == None or job_name == None, "can only select by job_name or job_id"
+        job = None
+        jobs = {}
+        if job_name != None:
+            jobs = self.jobdb.list_status({"dirname":job_name})
+        if job_id != None:
+            jobs = self.jobdb.list_status({"self_id":self_id})
+        if len(jobs) > 0:
+            job= list(jobs.values())[0]
+        return job
+        
+    def run(self,command:str,job_name:str,job_id:str=None,cwd=None):
         if job_id == None:
             job_id = job_name
+        logdir = "/app/database/job_logs/"
+        logfile = job_id
         res = self.jobdb.update_status(
-                    {'self_id':job_id,
-                    'logdir':"empyy",
-                    'logfile':"empy",
+                    {
+                    'self_id':job_id,
+                    'dirname':job_name,
+                    'cwd':cwd,
+                    'logdir':logdir,
+                    'logfile':logfile,
                     'status':'starting'})
         proc = self.processes.run(command=command,
                              job_name=job_name,
-                             job_id=job_id) 
+                             job_id=job_id,
+                             cwd=cwd,
+                             logdir=logdir,
+                             logfile=logfile) 
         if proc:
             result = {'self_id':job_id,'status':'running'}
         else:
@@ -40,11 +64,14 @@ class Jobs():
         db_res = self.jobdb.update_status(result)
         return result
     
-    def stop(self,job_id:str):
+    def stop(self,job_id:str=None,job_name:str=None):
+        assert job_id == None or job_name == None, "can only select by job_name or job_id"
+        job = self.__find(job_id,job_name)
+        if job == None:
+            return None
+        job_id = job['self_id']
         res = self.jobdb.update_status(
                     {'self_id':job_id,
-                    'logdir':"empyy",
-                    'logfile':"empy",
                     'status':'stopping'})
         success = self.processes.stop(job_id=job_id) 
         if success:
