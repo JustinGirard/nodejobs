@@ -17,22 +17,9 @@ class Processes:
         proc = self.find(job_id)
         if proc: 
             return proc
-        #for key,value in envs.items():
-        #    prefix = prefix + f"{key}={value} "
-        #print("start() "+prefix+command)
-        #process = subprocess.Popen(prefix+command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            
         if logfile and logdir:
             command = f" {command} >> {logdir}/{logfile}_out.txt 2>> {logdir}/{logfile}_errors.txt "        
-            #command = f"nohup {command} >> {logdir}/{logfile}_out.txt 2>> {logdir}/{logfile}_errors.txt &"        
-        '''
-        if cwd:
-            print("running command with cwd "+ command + " in "+cwd)
-            process = subprocess.Popen(command.split(), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,env=envs,cwd=cwd)
-        else:
-            print("running command without cwd "+ command)
-            process = subprocess.Popen(command.split(), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,env=envs)
-        '''
-
         if cwd:
             print("running command with cwd "+ command + " in "+cwd)            
             process = subprocess.Popen(command, shell=True, text=True, env=envs, cwd=cwd,preexec_fn=os.setsid)
