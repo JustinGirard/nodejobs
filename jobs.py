@@ -33,7 +33,7 @@ class Jobs():
         if job_name != None:
             jobs = self.jobdb.list_status({"dirname":job_name})
         if job_id != None:
-            jobs = self.jobdb.list_status({"self_id":self_id})
+            jobs = self.jobdb.list_status({"self_id":job_id})
         if len(jobs) > 0:
             job= list(jobs.values())[0]
         return job
@@ -80,7 +80,16 @@ class Jobs():
             result = {'self_id':job_id,'status':'failed_stop'}
         db_res = self.jobdb.update_status(result)  
         return result
-        
+
+    def job_logs(self,job_id:str=None,job_name:str=None):
+        assert job_id == None or job_name == None, "can only select by job_name or job_id"
+        job = self.__find(job_id,job_name)
+        if job == None:
+            return f"error: could not find job_id for {job_id}, {job_name}" ,f"error: could not find job_id for {job_id}, {job_name}"
+        job_id = job['self_id']
+        stdlog,errlog = self.jobdb.job_logs(self_id=job_id) 
+        return stdlog,errlog
+    
     def _update_status(self):
         running_jobs = {}
         for proc in self.processes.list():
@@ -96,11 +105,7 @@ class Jobs():
         for job_id in db_running_list.keys():
             if job_id not in running_ids:
                 # TODO - Review reason for stop to assign correct final status
-                res = self.jobdb.update_status(
-                                {'self_id':job_id,
-                                'logdir':"empyy",
-                                'logfile':"empy",
-                                'status':'finished'})
+                res = self.jobdb.update_status({'self_id':job_id,'status':'finished'})
     
     def list_status(self,filter=None):
         self._update_status()

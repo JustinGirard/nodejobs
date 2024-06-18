@@ -12,10 +12,10 @@ class JobRecord(BaseData):
     def __init__(self, in_dict,trim=False):
         if not 'last_update' in in_dict:
             in_dict['last_update'] = datetime.datetime.utcnow()     
-        if not 'logdir' in in_dict:
-            in_dict['logdir'] = '/app/database/jobs/'
-        if not 'logfile' in in_dict:
-            in_dict['logfile'] = 'job_status.'+in_dict['self_id']+".txt"
+        #if not 'logdir' in in_dict:
+        #    in_dict['logdir'] = '/app/database/jobs/'
+        #if not 'logfile' in in_dict:
+        #    in_dict['logfile'] = 'job_status.'+in_dict['self_id']+".txt"
         super().__init__(in_dict,trim)    
     
     def get_keys(self):
@@ -60,7 +60,42 @@ class JobDB():
                                      offset=None, 
                                      field=None)
         return resp
-
+    
+    def job_logs(self,self_id):
+        resp = self.jobdb.execute(qtype='find', 
+                                 source='process_status', 
+                                 filterval={'self_id':self_id}, 
+                                 setval=None, 
+                                 limit=None, 
+                                 offset=None, 
+                                 field=None)  
+        # {logdir}/{logfile}_out.txt 2>> {logdir}/{logfile}_errors.txt "  
+        stdlogs = ""
+        errlogs = ""
+        if len(resp) <= 0:
+            stdlogs,errlogs
+        doc = resp[0]
+        if not 'logdir' in doc:
+            return "error: no log dir found", "error: no log dir found"
+        if not 'logfile' in doc:
+            return "error: no log file found", "error: no log file found"
+        logdir = doc['logdir']
+        logfile = doc['logfile']
+        
+        try:
+            with open(f"{logdir}/{logfile}_out.txt",'r') as f:
+                stdlogs = f.read()
+        except:
+            stdlogs = "error: could not open "+ f"{logdir}/{logfile}_out.txt"
+        try:
+            with open(f"{logdir}/{logfile}_errors.txt",'r') as f:
+                errlogs = f.read()
+        except:
+            errlogs = "error: could not open "+ f"{logdir}/{logfile}_errors.txt"
+        
+        return    stdlogs, errlogs    
+        
+        
     def list_status(self,filter=None):
         if filter == None:
             clean_filter = {}
