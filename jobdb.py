@@ -12,10 +12,6 @@ class JobRecord(BaseData):
     def __init__(self, in_dict,trim=False):
         if not 'last_update' in in_dict:
             in_dict['last_update'] = datetime.datetime.utcnow()     
-        #if not 'logdir' in in_dict:
-        #    in_dict['logdir'] = '/app/database/jobs/'
-        #if not 'logfile' in in_dict:
-        #    in_dict['logfile'] = 'job_status.'+in_dict['self_id']+".txt"
         super().__init__(in_dict,trim)    
     
     def get_keys(self):

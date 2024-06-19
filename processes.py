@@ -17,7 +17,10 @@ class Processes:
         proc = self.find(job_id)
         if proc: 
             return proc
-            
+        if os.path.exists(f"{logdir}/{logfile}_out.txt"):
+            os.remove(f"{logdir}/{logfile}_out.txt")
+        if os.path.exists(f"{logdir}/{logfile}_errors.txt"):
+            os.remove(f"{logdir}/{logfile}_errors.txt")
         if logfile and logdir:
             command = f" {command} >> {logdir}/{logfile}_out.txt 2>> {logdir}/{logfile}_errors.txt "        
         if cwd:
