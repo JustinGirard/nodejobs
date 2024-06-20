@@ -36,8 +36,9 @@ class Processes:
     
     def find(self,job_id):
         for proc in psutil.process_iter(['pid', 'name', 'environ']):
-            if proc.info['environ'].get('JOB_ID') == job_id:
-                return proc
+            if 'environ' in proc.info and proc.info['environ']:
+                if proc.info['environ'].get('JOB_ID') == job_id:
+                    return proc
         return None
         
     def stop(self, job_id):
@@ -54,9 +55,10 @@ class Processes:
         """Lists all processes that are currently being managed and their status."""
         procs = []
         for proc in psutil.process_iter(['pid', 'name', 'environ']):
-            jid = proc.info['environ'].get('JOB_ID')
-            if jid != None and jid != "":
-                proc.job_id = proc.info['environ'].get('JOB_ID')
-                proc.job_name = proc.info['environ'].get('JOB_NAME')
-                procs.append(proc)
+            if 'environ' in proc.info and proc.info['environ']:            
+                jid = proc.info['environ'].get('JOB_ID')
+                if jid != None and jid != "":
+                    proc.job_id = proc.info['environ'].get('JOB_ID')
+                    proc.job_name = proc.info['environ'].get('JOB_NAME')
+                    procs.append(proc)
         return procs
