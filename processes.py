@@ -17,6 +17,8 @@ class Processes:
         proc = self.find(job_id)
         if proc: 
             return proc
+        if not os.path.exists(logdir):
+            os.makedirs(logdir)
         if os.path.exists(f"{logdir}/{logfile}_out.txt"):
             os.remove(f"{logdir}/{logfile}_out.txt")
         if os.path.exists(f"{logdir}/{logfile}_errors.txt"):
