@@ -1,6 +1,7 @@
 import datetime
 import sys
 sys.path.append("../")
+import os
 try:
     from decelium_wallet.decelium_wallet.databases.nosqlite import nosqlite
 except:
@@ -43,9 +44,12 @@ class JobDB():
     JobRecord = JobRecord
     JobFilter = JobFilter
     
-    def __init__(self):    
-        self.jobdb = nosqlite("/app/database/jobs.db")      
-    
+    def __init__(self,db_path:str):    
+        if db_path is None:
+            raise Exception("DP path cant be null")
+        self.db_path = os.path.join(db_path , "jobs.db")
+        self.jobdb = nosqlite(str(self.db_path))
+
     def update_status(self,job):
         clean_job = JobRecord(job)   
         resp = self.jobdb.execute(qtype='upsert', 

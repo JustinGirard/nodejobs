@@ -4,11 +4,22 @@ try:
 except:
     from .processes import Processes
     from .jobdb import JobDB
-    
+from pathlib import Path
+import os
+
 class Jobs():
-    def __init__(self):
+    def __init__(self,db_path=None):
+        try:
+            print(f"a. DB jobs working in {self.db_path }")
+        except:
+            home = Path.home()
+            default_dir = os.path.join(home, "tmp_decelium_job_database")
+            os.makedirs(default_dir, exist_ok=True)
+            self.db_path = default_dir
+            print(f"b. DB jobs working in {self.db_path }")
+
         self.processes = Processes()
-        self.jobdb = JobDB()
+        self.jobdb = JobDB( self.db_path )
         
     def __find(self,job_id:str=None,job_name:str=None):
         assert job_id == None or job_name == None, "can only select by job_name or job_id"
@@ -25,7 +36,8 @@ class Jobs():
     def run(self,command:str,job_name:str,job_id:str=None,cwd=None, envs=None):
         if job_id == None:
             job_id = job_name
-        logdir = "/app/database/job_logs/"
+        logdir = f"{self.db_path}/job_logs/"
+
         logfile = job_id
         res = self.jobdb.update_status(
                     {

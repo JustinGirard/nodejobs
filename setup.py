@@ -9,7 +9,7 @@ setup(
     url="https://github.com/Decelium/nodejobs",  # adjust as needed
     license="None",
     packages=find_packages(exclude=["tests*", "docs*"]),
-    python_requires=">=3.11",
+    python_requires=">=3.0",
     install_requires=[
         # List runtime dependencies here, for example:
         # "psutil>=5.8.0",
