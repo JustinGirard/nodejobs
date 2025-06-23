@@ -10,6 +10,7 @@ from pathlib import Path
 from jobs import Jobs
 import subprocess
 import shutil
+import psutil
 class TestJobsBlackBox(unittest.TestCase):
     def setUp(self):
         data_dir = "./test_data"
@@ -96,8 +97,23 @@ class TestJobsBlackBox(unittest.TestCase):
         self.assertNotEqual(all_jobs["t3"]["status"], "running")
 
         # Verify no OS process named “sleep 5” remains
-        rc = subprocess.call(["pgrep", "-f", "sleep 5"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        self.assertNotEqual(rc, 0)
+        #rc = subprocess.call(["pgrep", "-f", "sleep 5"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        #self.assertNotEqual(rc, 0)
+
+        # Verify no OS process named "sleep 5" remains
+        found = any(
+            proc.info.get('cmdline', [])[:2] == ['sleep', '5']
+            for proc in psutil.process_iter(['cmdline'])
+        )
+        self.assertFalse(found, "Found leftover 'sleep 5' process")
+
+
+
+
+
+
+
+
 
 
     def test_stop_nonexistent_job(self):
