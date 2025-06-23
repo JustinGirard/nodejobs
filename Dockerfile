@@ -19,7 +19,7 @@ ENV PATH="/workspace/venv/bin:$PATH"
 RUN pip install --upgrade pip setuptools wheel pytest
 
 # Install your repo from GitHub (replace URL as needed)
-# RUN pip install git+https://github.com/JustinGirard/nodejobs/nodejobs.git@master
+# RUN pip install git+https://github.com/JustinGirard/nodejobs/@master
 
 # Run tests, then keep the container alive
 CMD ["bash", "-lc", "ls && sleep infinity"]

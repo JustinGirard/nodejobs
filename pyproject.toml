@@ -24,6 +24,7 @@ urls = { "Homepage" = "https://github.com/Decelium/nodejobs" }
 
 dependencies = [
   "decelium_wallet @ git+https://github.com/Decelium/decelium_wallet@master"
+  "psutil
 ]
 
 [project.scripts]
