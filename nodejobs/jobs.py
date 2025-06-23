@@ -1,3 +1,6 @@
+from nodejobs.processes import Processes
+from nodejobs.jobdb import JobDB,JobFilter,JobRecord, JobRecordDict
+
 try:
     from nodejobs.processes import Processes
     from nodejobs.jobdb import JobDB,JobFilter,JobRecord, JobRecordDict
