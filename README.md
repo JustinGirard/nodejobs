@@ -1,2 +1,0 @@
-# It runs jobs
-It keeps the status tracked in sqlite, and overall doesn't suck. It doesnt keep a process running in the background, and overall can be just used without any special management as a wrapper over the command line. It prevents people from running duplicate jobs. It keeps an archive of past jobs and logs organized, so shell command results can always be investigated. Overall it just makes the shell automation standard, so many unit tests, deployment tasks, and other requalr operations can easily be automated on top.
