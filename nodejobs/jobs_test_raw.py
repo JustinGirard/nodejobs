@@ -101,11 +101,14 @@ class TestJobsBlackBox(unittest.TestCase):
         #self.assertNotEqual(rc, 0)
 
         # Verify no OS process named "sleep 5" remains
-        found = any(
-            proc.info.get('cmdline', [])[:2] == ['sleep', '5']
-            for proc in psutil.process_iter(['cmdline'])
-        )
+        found = False
+        for proc in psutil.process_iter(['cmdline']):
+            cmd = proc.info.get('cmdline') or []
+            if cmd[:2] == ['sleep', '5']:
+                found = True
+                break
         self.assertFalse(found, "Found leftover 'sleep 5' process")
+
 
 
 
