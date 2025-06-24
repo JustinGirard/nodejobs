@@ -1,5 +1,6 @@
 ### Introduction
-The `nodejobs` repository runs, tracks, and logs data about external commands without requiring a persistent daemon. This means if you have one or more tools relaying on come backround processes, they can each collaborate to start up, run, and manage those jobs without needed some long running process or manager in the background. 
+The `nodejobs` repository runs, tracks, and logs data about external commands without requiring a persistent daemon. This means if you have one or more tools relaying on come backround processes, they can each collaborate to start up, run, and manage those jobs without needed some long running process or manager in the background. You likely only ever need to use the 'Jobs' class, however the complete system is quite simple.
+<img width="699" alt="image" src="https://github.com/user-attachments/assets/926e70a9-9629-4ca2-8ad2-dba467b19048" />
 
 It offers a simple API to spawn subprocesses, update job statuses, and persist metadata and logs in flat files that can be cracked open in a pinch, (simply in `JOB_DB/jobname/stdout*.txt` files!)  If you just need a tiny library to run and check on a few jobs along with your script, you might just use `nodejobs`.
 
