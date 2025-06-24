@@ -84,7 +84,7 @@ class TestJobsBlackBox(unittest.TestCase):
         result = self.jobs.run(command="sleep 5", job_id="t3")
         self.assertEqual(result["status"], "running")
         #print(f"\n\n>result -> {result}")
-        print("\n\n\n\n STOP ISSUED:")
+        #print("\n\n\n\n STOP ISSUED:")
         stop_res = self.jobs.stop(job_id="t3")
         # The stop() call should return a dict with either "stopped" or "failed_stop"
         self.assertIn(stop_res["status"], ("stopped", "finished"))

@@ -11,7 +11,8 @@ import signal  # add at top of file
 import time
 
 class Processes:
-    def __init__(self,job_db):
+    def __init__(self,job_db, verbose=False):
+        self.verbose = verbose
         assert type(job_db) == JobDB
         self.jobdb = job_db
         self._processes: Dict[str, subprocess.Popen] = {}
@@ -19,15 +20,18 @@ class Processes:
     
     def _reap_loop(self):
         while True:
-            print("reaping ... ",end="")
+            if self.verbose == True:
+                print("reaping ... ",end="")
             for jid, proc in list(self._processes.items()):
-                print(f",  {jid}",end="")
+                if self.verbose == True:
+                    print(f",  {jid}",end="")
                 if proc.poll() is not None:
                     proc.wait()  # reap
                     # optional: update your JobDB here, e.g.
                     # self.jobdb.update_status(jid, proc.returncode)
                     del self._processes[jid]
-            print(".. reaped")
+            if self.verbose == True:
+                print(".. reaped")
 
             time.sleep(1)    
 
@@ -100,11 +104,13 @@ ResourceWarning: Enable tracemalloc to get the object allocation traceback
             # Since we run in shell mode, we will have to clean up the shell, too
             proc = self.find(job_id)
             if proc:
-                print(" --- stopping ",proc)
+                if self.verbose == True:
+                    print(" --- stopping ",proc)
                 proc.terminate()
                 proc.wait()  
             else:
-                print(" --- NOT stopping ",job_id)
+                if self.verbose == True:
+                    print(" --- NOT stopping ",job_id)
 
         return True
     

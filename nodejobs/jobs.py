@@ -13,7 +13,8 @@ from psutil import Process
 from typing import Tuple
 import subprocess
 class Jobs():
-    def __init__(self,db_path=None):
+    def __init__(self,db_path=None,verbose=False):
+        self.verbose = verbose
         try:
             #print(f"a. DB jobs working in {db_path }")
             self.db_path = db_path
@@ -26,7 +27,7 @@ class Jobs():
             self.db_path = default_dir
             print(f"Jobs.__init__ ({e}). DB jobs working in {self.db_path }")
         self.jobdb = JobDB( self.db_path )
-        self.processes = Processes(self.jobdb )
+        self.processes = Processes(self.jobdb,verbose )
         
     def __find(self,job_id:str):
         assert job_id != None, "can only select by job_id"
@@ -112,26 +113,30 @@ class Jobs():
         assert  job_id in found_job, "Could not find a job that was just present. Should be impossible. Race condition?"
         job = found_job[job_id]
         if JobRecord(found_job[job_id]).status == JobRecord.Status.c_running:
-            print(f"inspecting job (A): {job}")
+            if self.verbose == True:
+                print(f"inspecting job (A): {job}")
             result = JobRecord({
                         job.last_pid:job.last_pid,
                         job.self_id:job_id,
                         job.status:job.Status.c_failed_stop})
 
         if success:
-            print(f"inspecting job (B): {job}")
+            if self.verbose == True:
+                print(f"inspecting job (B): {job}")
             result = JobRecord({
                         JobRecord.last_pid:job.last_pid,
                         JobRecord.self_id:job.self_id,
                         JobRecord.status:job.status})
         else:
-            print(f"inspecting job (C): {job}")
+            if self.verbose == True:
+                print(f"inspecting job (C): {job}")
             result = JobRecord({
                         job.last_pid:job.last_pid,
                         job.self_id:job.self_id,
                         job.status:job.status})
-        db_res = self.jobdb.update_status(result)  
-        print(f"inspecting job (D): {db_res}")
+        db_res = self.jobdb.update_status(result)
+        if self.verbose == True:
+            print(f"inspecting job (D): {db_res}")
         return result
 
     def job_logs(self,job_id:str) -> Tuple[str,str]:
@@ -146,11 +151,13 @@ class Jobs():
     
     def _update_status(self):
         running_jobs = {}
-        print(f"...updating ...")  
+        if self.verbose == True:
+            print(f"...updating ...")  
 
         for proc in self.processes.list():
             proc:Process = proc
-            print(f"...updating proc ... {proc}, as {proc.job_id } ")  
+            if self.verbose == True:
+                print(f"...updating proc ... {proc}, as {proc.job_id } ")  
             pid, status = os.waitpid(proc.pid, os.WNOHANG)
           
             running_jobs[proc.job_id ] = proc  # Consume the Monkey patched job_id so we can find the right dictionary key to use.
@@ -168,7 +175,8 @@ class Jobs():
         db_review_dict = {**db_runningdict, **db_stopping_dict}
         #print(db_running_list)
         for job_id in db_review_dict.keys():
-            print(f"...reviewing {job_id}")  
+            if self.verbose == True:
+                print(f"...reviewing {job_id}")  
             if job_id not in running_ids:
                 # TODO - Review reason for stop to assign correct final status
                 #print(f"RETIRING {job_id}")
