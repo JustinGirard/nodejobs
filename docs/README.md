@@ -1,5 +1,6 @@
+<p align="center">
 <img width="632" alt="image" src="https://github.com/user-attachments/assets/4cf8dc4e-6daf-4e63-87d8-2ab31f1ada9a" />
-
+</p>
 
 The `nodejobs` repository runs, tracks, and logs data about external commands without requiring a persistent daemon. This means if you have one or more tools relaying on come backround processes, they can each collaborate to start up, run, and manage those jobs without needed some long running process or manager in the background. You likely only ever need to use the 'Jobs' class, however the complete system is quite simple.
 
