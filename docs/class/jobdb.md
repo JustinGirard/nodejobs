@@ -19,8 +19,8 @@ job_db = JobDB(db_path="/path/to/job/storage")
 *Updating a job status:*  
 ```python
 job_record = {
-    JobRecord.f_self_id: "job123",
-    JobRecord.f_status: JobRecord.Status.c_running,
+    JobRecord.self_id: "job123",
+    JobRecord.status: JobRecord.Status.c_running,
     # additional fields...
 }
 job_db.update_status(job_record)
