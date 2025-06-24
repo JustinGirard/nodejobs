@@ -2,6 +2,10 @@
 
 The `nodejobs` repository provides a schema-driven framework for managing and orchestrating system jobs and processes with persistent storage and structured data access. Core components include classes for schema validation, job record management, process control, and database interaction. If you are considering a deeper dive on nodejobs, and maybe want to extend it or use it as part of your application, you will want to read this document. If you want to USE node jobs, the README is good place to start.
 
+
+<img width="690" alt="image" src="https://github.com/user-attachments/assets/e409482a-cf50-44e6-9e3f-292ab7a0034d" />
+
+
 ### Main Modules and Their Responsibilities
 
 1. **Persistent Storage Module (`jobdb.py`):**  
@@ -29,7 +33,6 @@ The `nodejobs` repository provides a schema-driven framework for managing and or
 
 
 ### Key Classes and Data Structures
-<img width="690" alt="image" src="https://github.com/user-attachments/assets/e409482a-cf50-44e6-9e3f-292ab7a0034d" />
 
 - **`JobRecord`**  
   A schema-driven class representing individual job entries. It defines fields like `self_id`, `status`, `last_update`, `last_pid`, and log-related fields. It also includes nested status constants (e.g., `JobRecord.Status.c_running`, `JobRecord.Status.c_finished`). It ensures each job's data adheres to the schema, supports status updates, and log retrieval.
