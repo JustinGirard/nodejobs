@@ -131,32 +131,6 @@ filter = JobFilter({JobFilter.status: "running"})
 # jobs.list_status(filter=filter)
 ```
 
----
-
-### `Processes`
-
-`Processes` manages subprocesses associated with jobs, enabling process control.
-
-```python
-from nodejobs.processes import Processes
-from nodejobs.jobdb import JobDB
-
-# Initialize process manager with a database
-job_db = JobDB("/path/to/jobs.db")
-proc_manager = Processes(job_db)
-
-# Launch a process linked to a job
-proc = proc_manager.run(command=["sleep", "10"], job_id="job456")
-
-# Find and stop a process by job ID
-process = proc_manager.find("job456")
-if process:
-    proc_manager.stop("job456")
-```
-
----
-
-These classes constitute the core external API of `nodejobs`, supporting schema-validated data handling, process management, and comprehensive job lifecycle workflows.## Architecture
 
 The `nodejobs` repository is designed with a clear separation between schema-driven data classes and behavior/control classes, promoting modularity, maintainability, and data integrity.
 
@@ -189,22 +163,6 @@ The `nodejobs` repository is designed with a clear separation between schema-dri
   - Uses `job_id` to link system processes with their metadata in `JobDB`.  
   - Maintains an internal registry of active subprocesses, often running background cleanup threads.
 
-### Interaction Overview
-```plaintext
-+----------------+         +--------------+        +--------------+
-|   `Jobs`      |  uses   |  `JobDB`    |  stores|  `JobRecord`|
-| (API layer)   |-------->| (Database)  |<--------| (Schema &   |
-|               |         |              |        |  Validation)|
-+----------------+         +--------------+        +--------------+
-        |                          |
-        |                          |
-        v                          v
-+----------------+        +----------------+
-| `Processes`    |        | Log Files on  |
-| (Process Mgmt)|        | Filesystem   |
-+----------------+        +----------------+
-```
-
 ### Summary
 - **Data Classes (`JobRecord`, `JobFilter`)** enforce schema validation, data integrity, and consistent data access.  
 - **Behavior Classes (`Jobs`, `JobDB`, `Processes`)** implement the core logic for job lifecycle management, process control, and persistence.  
@@ -212,30 +170,16 @@ The `nodejobs` repository is designed with a clear separation between schema-dri
 
 This architecture promotes a modular, schema-validated core system with a clear separation between data schemas and operational behaviors, facilitating robustness and ease of maintenance.# Class Summaries
 
-## BaseData
-A schema-driven container class that wraps a Python dictionary, enforcing field definitions, types, and schema consistency through class constants.
-- **Key Methods and Properties:**
-  - `__init__(self, data: dict, trim: bool = True)`: Initializes the object, validating and wrapping nested data.
-  - `get_keys() -> (dict, dict)`: Returns mappings of required and optional fields with types or nested `BaseData` classes.
-  - `clean(self)`: Removes keys not defined in the schema.
-  - Data access via `instance[instance.f_<field>]`, where `f_<field>` are class constants.
-- **Implementation Notes / Usage Hints:**
-  - Use class constants (e.g., `f_self_id`) for key access to ensure schema stability.
-  - Wraps nested dictionaries into appropriate subclasses for schema enforcement.
-  - Validates data types upon instantiation and optionally trims extraneous keys.
-
----
-
 ## JobRecord
 Represents an individual job's data, including status, timestamps, logs, and metadata, with schema validation and access constants.
 - **Key Methods and Properties:**
   - `__init__(self, data: dict)`: Wraps raw job data into a validated schema object.
   - `get_keys() -> (dict, dict)`: Defines required and optional fields with types, including nested `Status`.
-  - Access fields via constants like `f_self_id`, `f_status`, `f_last_pid`.
-  - Nested class `Status` with constants such as `c_running`, `c_finished`, etc.
+  - Access fields via constants like `JobRecord.self_id`, `JobRecord.status`, `JobRecord.last_pid`.
+  - Nested class `Status` with constants such as `JobRecord.Status.c_running`, `JobRecord.Status.c_finished`, etc.
 - **Implementation Notes / Usage Hints:**
-  - Use `JobRecord.f_<field>` constants for schema-safe key access.
-  - All data validation occurs during initialization.
+  - Use `JobRecord.<field>` constants for schema-safe key access.
+  - Use `(instance:JobRecord).<field>` for values.
   - Suitable for maintaining consistent, schema-validated job state data within the system.
 
 ---
@@ -244,19 +188,15 @@ Represents an individual job's data, including status, timestamps, logs, and met
 Defines filtering criteria for querying job records, ensuring schema consistency and type correctness.
 - **Key Methods and Properties:**
   - `__init__(self, data: dict)`: Creates a filter object with specified criteria.
-  - `get_keys() -> (dict, dict)`: Returns schema mappings for filter fields like `f_self_id`, `f_status`, etc.
+  - `get_keys() -> (dict, dict)`: Returns schema mappings for filter fields like `self_id`, `status`, etc.
 - **Implementation Notes / Usage Hints:**
-  - Use class constants such as `f_self_id`, `f_status` for setting filter criteria.
+  - Use class constants such as `self_id`, `status` for setting filter criteria.
   - Facilitates type-checked filtering when querying job data via `list_status()` or similar methods.
 
 ---
 
 ## JobRecordDict
 A collection class managing multiple `JobRecord` instances, keyed by job ID, with schema validation.
-- **Key Methods and Properties:**
-  - `__init__(self, in_data: dict)`: Initializes with a dictionary of job records.
-  - `get_keys() -> (dict, dict)`: Defines expected keys, with optional `f_all` mapping to `JobRecord`.
-  - Supports dictionary-like access to individual `JobRecord` objects via `__getitem__`.
 - **Implementation Notes / Usage Hints:**
   - Designed for bulk management of job records, ensuring they conform to the schema.
   - Use the class constants from `JobRecord` to access fields consistently.
@@ -272,8 +212,6 @@ Provides persistent storage and retrieval of job records, logs, and statuses, ty
   - `job_logs(self, job_id: str) -> Tuple[str, str]`: Retrieves stdout and stderr logs for a job.
 - **Implementation Notes / Usage Hints:**
   - Wraps raw database data into `JobRecord` instances for schema enforcement.
-  - Uses `get_keys()`-defined schemas for validation and querying.
-  - Ensures consistent, schema-based access to stored job data across the system.
 
 ---
 
@@ -285,6 +223,7 @@ Acts as the main interface for managing job lifecycle operations such as running
   - `stop(self, job_id: str) -> dict or None`: Stops a running job by ID.
   - `list_status(self, filter: JobFilter = None) -> JobRecordDict`: Lists jobs with optional filtering.
   - `get_status(self, job_id: str) -> JobRecord`: Retrieves current status for a specific job.
+
 - **Implementation Notes / Usage Hints:**
   - Uses `JobRecord` and `JobFilter` schemas for data validation and filtering criteria.
   - Encapsulates job control logic, process management, and status updates.
