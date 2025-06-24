@@ -10,10 +10,7 @@ As for the code, its clean and extensible-- it has been for us at least. Core co
 
 ### Install
 ```python
-pip install decelium-nodejobs
-# or
-python -m pip install decelium-nodejobs
-
+pip install git+https://github.com/JustinGirard/nodejobs/@master
 ```
 
 ### Use
@@ -21,7 +18,8 @@ python -m pip install decelium-nodejobs
 from nodejobs import Jobs, JobRecord
 
 # Create a Jobs manager with a specified database path
-jobs_manager = Jobs(db_path="/path/to/job_db")
+jobs_manager = Jobs(db_path="./some/tracking/location")
+# * If db_path is not passed, a hard coded directory in the current users home directory will be chosen
 job_record = jobs_manager.run(command="python script.py", job_id="job_001")
 job_record:JobRecord = jobs_manager.get_status(job_id="job_001")
 assert job_record.status == JobRecord.Status.c_finished
