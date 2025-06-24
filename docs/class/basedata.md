@@ -14,12 +14,12 @@ Initializes an instance by wrapping a dictionary into a schema-validated contain
 ``` python
 # usage
 # Assuming MySchema is a subclass of BaseData
-initial_data: dict = {"f_status": "active", "f_value": 42}
+initial_data: dict = {"status": "active", "value": 42}
 instance: MySchema = MySchema(data=initial_data)
 ```
 
 ### `get_keys(self) -> Tuple[dict, dict]`
-Returns two dictionaries: required and optional schema fields, mapping class constants (`f_*`) to expected types or nested schema classes.
+Returns two dictionaries: required and optional schema fields.
 - **Returns:**  
   Tuple containing:
   - Required fields dictionary  
@@ -31,7 +31,7 @@ required_fields, optional_fields = instance.get_keys()
 ```
 
 ### `clean(self) -> None`
-Removes any keys from the internal data that are not declared in the schema, maintaining data integrity.
+Removes any keys from the internal data that are not declared in the schema, maintaining data integrity. By default BaseData classes will leave extra fields alone.
 ```python
 # usage
 instance.clean()
