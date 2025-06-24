@@ -16,7 +16,6 @@ Returns two dictionaries indicating required and optional keys for the container
 - **Returns:**  
   A tuple with two dictionaries:  
   - `required`: Dictionary of mandatory keys (empty in this implementation).  
-  - `optional`: Dictionary with key `'f_all'` mapped to the `JobRecord` class.
 
 ```python
 # usage
@@ -35,9 +34,9 @@ Initializes the `JobRecordDict` with input data, typically a dictionary of job r
 # usage
 data: dict = {
     "job_123": {
-        JobRecord.f_self_id: "job_123",
-        JobRecord.f_status: JobRecord.Status.c_running,
-        JobRecord.f_last_update: datetime.datetime.utcnow(),
+        JobRecord.self_id: "job_123",
+        JobRecord.status: JobRecord.Status.c_running,
+        JobRecord.last_update: datetime.datetime.utcnow(),
     }
 }
 job_collection: JobRecordDict = JobRecordDict(data)
@@ -66,14 +65,15 @@ from nodejobs.jobdb import JobRecord, JobRecordDict
 
 # Initialize a JobRecord
 record_data: dict = {
-    JobRecord.f_self_id: "job_123",
-    JobRecord.f_status: JobRecord.Status.c_running,
-    JobRecord.f_last_update: datetime.datetime.utcnow(),
+    JobRecord.self_id: "job_123",
+    JobRecord.status: JobRecord.Status.c_running,
+    JobRecord.last_update: datetime.datetime.utcnow(),
 }
 job_record: JobRecord = JobRecord(record_data)
 
 # Wrap into JobRecordDict
-job_collection: JobRecordDict = JobRecordDict({record_data[JobRecord.f_self_id]: record_data})
+job_collection: JobRecordDict = JobRecordDict({record_data[JobRecord.self_id]: record_data})
+# Also works: job_collection: JobRecordDict = JobRecordDict({record_data.self_id: record_data})
 
 # Access all records
 all_jobs: dict = job_collection
