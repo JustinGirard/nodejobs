@@ -54,22 +54,20 @@ The `nodejobs` repository provides a schema-driven framework for managing and or
 
 ### Coding Standards and Developer Notes
 
-- **Schema Enforcement**  
-  All data classes extend `BaseData`, which enforces schema validation through the `get_keys()` method. Fields are accessed via static class constants (`f_<field>`) to prevent key errors and facilitate schema updates.
-
-- **Data Access Pattern**  
-  Consistent use of `instance[instance.f_<field>]` pattern for data retrieval ensures schema integrity and reduces hardcoded key usage.
-
 - **Documentation and Testing**  
-  The repository includes comprehensive high-fidelity code snippets and test cases demonstrating usage patterns, such as starting jobs, polling for status changes, capturing logs, and handling errors gracefully.
+  The repository includes comprehensive high-fidelity code snippets and test cases demonstrating usage patterns, such as starting jobs, polling for status changes, capturing logs, and handling errors gracefully. See the examples directory.
 
 - **File and Log Management**  
-  Log files are stored according to directory and filename schema, with existing logs cleaned before process launch to ensure clarity.
+  Log files are stored according to directory and filename schema, with existing logs cleaned before process launch to ensure clarity. If you notice that a job crashes, it is direct to just open the logs:
+
+  <img width="275" alt="image" src="https://github.com/user-attachments/assets/7ca1d550-6da7-4082-b06b-a0ebcb56d36a" />
 
 - **Process Management**  
   Subprocesses are launched with `preexec_fn=os.setsid` for process group control, enabling clean termination and signal handling. Processes are tracked via process IDs stored in job records.
 
-This architecture emphasizes schema-driven data integrity, reliable process control, and persistent job tracking, facilitating scalable and maintainable job orchestration within the system.## Intended External Use
+This architecture emphasizes schema-driven data integrity, reliable process control, and persistent job tracking, facilitating scalable and maintainable job orchestration within the system.
+
+## Intended External Use
 
 The `nodejobs` repository provides a set of core classes designed to facilitate external developer workflows related to job management, process control, and data schema validation. Below are the primary classes intended for external consumption, along with example snippets demonstrating typical, minimal usage scenarios.
 
@@ -105,16 +103,16 @@ jobs.stop(job_id="job123")
 from nodejobs.jobdb import JobRecord
 
 # Wrap raw job data into a schema-validated record
-raw_job = {
-    JobRecord.f_self_id: "job123",
-    JobRecord.f_status: "running",
-    JobRecord.f_last_pid: 12345,
-}
+raw_job = JobRecord({
+    JobRecord.self_id: "job123",
+    JobRecord.status: "running",
+    JobRecord.last_pid: 12345,
+})
 rec = JobRecord(raw_job)
 
 # Access fields using constants
-print(rec[rec.f_self_id])  # "job123"
-print(rec[rec.f_status])   # "running"
+print(rec.self_id)  # "job123"
+print(rec.status)   # "running"
 ```
 
 ---
@@ -127,7 +125,7 @@ print(rec[rec.f_status])   # "running"
 from nodejobs.jobdb import JobFilter
 
 # Create a filter for jobs with status "running"
-filter = JobFilter({JobFilter.f_status: "running"})
+filter = JobFilter({JobFilter.status: "running"})
 
 # Use filter in listing jobs (assuming a method like jobs.list_status(filter))
 # jobs.list_status(filter=filter)
