@@ -99,7 +99,6 @@ class TestJobsBlackBox(unittest.TestCase):
         # Verify no OS process named “sleep 5” remains
         #rc = subprocess.call(["pgrep", "-f", "sleep 5"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         #self.assertNotEqual(rc, 0)
-
         # Verify no OS process named "sleep 5" remains
         found = False
         for proc in psutil.process_iter(['cmdline']):

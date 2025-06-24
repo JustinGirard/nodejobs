@@ -90,7 +90,7 @@ class Jobs():
         #rint(f"result {db_res} \n\n\n")
         return result
     
-    def stop(self,job_id:str) -> JobRecord:
+    def stop(self,job_id:str,wait_time:int=1) -> JobRecord:
             
         assert job_id != None, "can only select by  job_id"
         job:JobRecord = self.__find(job_id)
@@ -105,6 +105,17 @@ class Jobs():
                         JobRecord.status:job.Status.c_stopping
                     }))
         success = self.processes.stop(job_id=job_id) 
+        time.sleep(wait_time)
+        found_job = self.list_status(JobFilter({
+                        JobFilter.self_id:job_id,
+                    }))
+        assert  job_id in found_job, "Could not find a job that was just present. Should be impossible. Race condition?"
+        if JobRecord(found_job[job_id]).status == JobRecord.Status.c_running:
+            result = JobRecord({
+                        job.last_pid:job.last_pid,
+                        job.self_id:job_id,
+                        job.status:job.Status.c_failed_stop})
+
         if success:
             result = JobRecord({
                         JobRecord.last_pid:job.last_pid,
