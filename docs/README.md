@@ -2,14 +2,7 @@
 <img width="632" alt="image" src="https://github.com/user-attachments/assets/4cf8dc4e-6daf-4e63-87d8-2ab31f1ada9a" />
 </p>
 
-The `nodejobs` repository runs, tracks, and logs data about external commands without requiring a persistent daemon. This means if you have one or more tools relaying on come backround processes, they can each collaborate to start up, run, and manage those jobs without needed some long running process or manager in the background. You likely only ever need to use the 'Jobs' class, however the complete system is quite simple.
-
-<p align="center">
-<img width="699" alt="image" src="https://github.com/user-attachments/assets/926e70a9-9629-4ca2-8ad2-dba467b19048" />
-</p>
-It offers a simple API to spawn subprocesses, update job statuses, and persist metadata and logs in flat files that can be cracked open in a pinch, (simply in `JOB_DB/jobname/stdout*.txt` files!)  If you just need a tiny library to run and check on a few jobs along with your script, you might just use `nodejobs`.
-
-As for the code, its clean and extensible-- it has been for us at least. Core components such as `BaseData`, `JobRecord`, and `JobFilter` define and validate the schema for each job records, helping to prevent key-mismatch errors and ensuring data consistency. Status updates occur whenever you invoke a job command, so there’s no background service to manage. Common use cases include automated install scripts, deployment tasks, and data-transfer operations. Designed for minimalism and extensibility, nodejobs can function as a standalone utility or as the foundation for a bespoke job-management solution. If you are looking for a small job running to build on top of, this might be a good fit. Its large enough to have structure, and safety, but small enough you can choose what you want to add in.
+The `nodejobs` repository runs, tracks, and logs data about external commands without requiring a persistent daemon. This means if you have one or more tools relaying on some backround processes, they can each collaborate to start up, run, and manage those jobs without needed some long running process or manager in the background. You likely only ever need to use the 'Jobs' class, however the complete system is quite simple.
 
 ### Install
 ```python
@@ -31,6 +24,13 @@ stdout:str, stder:str = jobs_manager.job_logs(job_id="job_001")
 jobs_manager.stop(job_id="job_001")
 
 ```
+<p align="center">
+<img width="699" alt="image" src="https://github.com/user-attachments/assets/926e70a9-9629-4ca2-8ad2-dba467b19048" />
+</p>
+It offers a simple API to spawn subprocesses, update job statuses, and persist metadata and logs in flat files that can be cracked open in a pinch, (simply in `JOB_DB/jobname/stdout*.txt` files!)  If you just need a tiny library to run and check on a few jobs along with your script, you might just use `nodejobs`.
+
+As for the code, its clean and extensible-- it has been for us at least. Core components such as `BaseData`, `JobRecord`, and `JobFilter` define and validate the schema for each job records, helping to prevent key-mismatch errors and ensuring data consistency. Status updates occur whenever you invoke a job command, so there’s no background service to manage. Common use cases include automated install scripts, deployment tasks, and data-transfer operations. Designed for minimalism and extensibility, nodejobs can function as a standalone utility or as the foundation for a bespoke job-management solution. If you are looking for a small job running to build on top of, this might be a good fit. Its large enough to have structure, and safety, but small enough you can choose what you want to add in.
+
 
 ### Motivation
 
