@@ -1,5 +1,7 @@
 The `Processes` class provides a structured way to manage system processes associated with job execution. It addresses the challenge of controlling multiple subprocesses, tracking their statuses, and ensuring clean startup and shutdown procedures within a broader job management environment. Designed for developers working on automation, batch processing, or job scheduling systems, it facilitates robust process oversight by encapsulating common operations such as launching, monitoring, and terminating processes.
 
+### IMPORTANT: To use Jobs, you never need to use the JobDB directly (and should not). The only reason to read this file is to extend or modify the code.
+
 At its core, `Processes` employs a combination of process management techniques and database integration. It uses `psutil` to inspect and control system processes, maintains an internal registry of active subprocesses, and interacts with a persistent job database (`JobDB`) to associate processes with specific jobs. An important design pattern is its use of background threads, like `_reap_loop`, which periodically clean up completed processes to prevent resource leaks and keep the process registry current. This approach helps ensure that process handling remains efficient and reliable over time.
 
 ### Key Concepts & Responsibilities
