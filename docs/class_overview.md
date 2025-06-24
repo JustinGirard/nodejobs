@@ -29,21 +29,19 @@ The `nodejobs` repository provides a schema-driven framework for managing and or
 
 
 ### Key Classes and Data Structures
-
-- **`BaseData`**  
-  A lightweight schema-enforced container wrapping Python dictionaries. It defines class constants (`f_<field>`) representing schema keys, used to enforce data integrity, validate types, and facilitate schema validation. Methods include `get_keys()`, `clean()`, and initialization routines that wrap nested dicts into appropriate subclasses. All data access is performed via the pattern `instance[instance.f_<field>]`, ensuring schema consistency.
+<img width="690" alt="image" src="https://github.com/user-attachments/assets/e409482a-cf50-44e6-9e3f-292ab7a0034d" />
 
 - **`JobRecord`**  
-  A schema-driven class representing individual job entries. It defines constants like `f_self_id`, `f_status`, `f_last_update`, `f_last_pid`, and log-related fields. It also includes nested status constants (e.g., `c_running`, `c_finished`). It ensures each job's data adheres to the schema, supports status updates, and log retrieval.
+  A schema-driven class representing individual job entries. It defines fields like `self_id`, `status`, `last_update`, `last_pid`, and log-related fields. It also includes nested status constants (e.g., `JobRecord.Status.c_running`, `JobRecord.Status.c_finished`). It ensures each job's data adheres to the schema, supports status updates, and log retrieval.
 
 - **`JobFilter`**  
-  Defines filtering criteria for querying job records. It uses schema constants such as `f_self_id`, `f_status`, `f_dirname`, etc. It enables schema-validated filtering when listing jobs from the database.
+  Defines filtering criteria for querying job records. It uses schema constants such as `self_id`, `status` It enables schema-validated filtering when listing jobs from the database.
 
 - **`JobRecordDict`**  
-  A container class that holds multiple `JobRecord` instances, keyed by job identifiers. It utilizes the `get_keys()` method to define schema expectations for the collection.
+  A container class that holds multiple `JobRecord` instances, keyed by job `self_id`.
 
 - **`JobDB`**  
-  Handles persistent storage of job records in an SQLite database (`jobs.db`). It provides methods for updating statuses (`update_status()`), retrieving logs (`job_logs()`), and listing jobs with filtering support (`list_status()`). It employs `BaseData` subclasses for schema validation, using class constants for key references.
+  Handles persistent storage of job records in a SQLite database (`jobs.db`). It provides methods for updating statuses (`update_status()`), retrieving logs (`job_logs()`), and listing jobs with filtering support (`list_status()`). 
 
 - **`Jobs`**  
   The main interface for managing jobs. It supports starting (`run()`), stopping (`stop()`), listing (`list_status()`), and querying job statuses (`get_status()`). It interacts with `JobDB` for persistence and with `Processes` for subprocess management.
