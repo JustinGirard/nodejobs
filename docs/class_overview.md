@@ -59,7 +59,10 @@ The `nodejobs` repository provides a schema-driven framework for managing and or
 
 - **File and Log Management**  
   Log files are stored according to directory and filename schema, with existing logs cleaned before process launch to ensure clarity. If you notice that a job crashes, it is direct to just open the logs:
-
+```python
+# If starting with a debug directory:
+Job(db_path='./debug_jobs')
+```
   <img width="275" alt="image" src="https://github.com/user-attachments/assets/7ca1d550-6da7-4082-b06b-a0ebcb56d36a" />
 
 - **Process Management**  
