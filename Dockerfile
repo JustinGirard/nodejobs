@@ -22,5 +22,12 @@ RUN pip install --upgrade pip setuptools wheel pytest
 RUN pip install git+https://github.com/JustinGirard/nodejobs/@master
 RUN git clone https://github.com/JustinGirard/nodejobs
 
+
+#### DEBUG TOOLS
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends git vim && \
+    apt-get install -y --no-install-recommends procps && \
+    rm -rf /var/lib/apt/lists/*
+
 # Run tests, then keep the container alive
 CMD ["bash", "-lc", "ls && sleep infinity"]

@@ -19,12 +19,16 @@ class Processes:
     
     def _reap_loop(self):
         while True:
+            print("reaping ... ",end="")
             for jid, proc in list(self._processes.items()):
+                print(f",  {jid}",end="")
                 if proc.poll() is not None:
                     proc.wait()  # reap
                     # optional: update your JobDB here, e.g.
                     # self.jobdb.update_status(jid, proc.returncode)
                     del self._processes[jid]
+            print(".. reaped")
+
             time.sleep(1)    
 
     def run(self, command: str, job_id: str,
@@ -95,10 +99,13 @@ ResourceWarning: Enable tracemalloc to get the object allocation traceback
         for i in [1,2]:
             # Since we run in shell mode, we will have to clean up the shell, too
             proc = self.find(job_id)
-            #print("stopping ",proc)
             if proc:
+                print(" --- stopping ",proc)
                 proc.terminate()
                 proc.wait()  
+            else:
+                print(" --- NOT stopping ",job_id)
+
         return True
     
 
@@ -115,7 +122,7 @@ ResourceWarning: Enable tracemalloc to get the object allocation traceback
         for proc in psutil.process_iter(['pid', 'name', 'environ']):
             if  proc.info['pid'] in list(pid_jobs.keys()):
                 pid = proc.info['pid']
-                proc.job_id = pid_jobs[pid][JobRecord.self_id]
+                proc.job_id = pid_jobs[pid][JobRecord.self_id] #TODO - Monkey patch the Process class with job_id for later tracking
                 procs.append(proc)
 
         return procs

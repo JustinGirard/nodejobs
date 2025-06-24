@@ -84,7 +84,7 @@ class TestJobsBlackBox(unittest.TestCase):
         result = self.jobs.run(command="sleep 5", job_id="t3")
         self.assertEqual(result["status"], "running")
         #print(f"\n\n>result -> {result}")
-
+        print("\n\n\n\n STOP ISSUED:")
         stop_res = self.jobs.stop(job_id="t3")
         # The stop() call should return a dict with either "stopped" or "failed_stop"
         self.assertIn(stop_res["status"], ("stopped", "finished"))
@@ -95,27 +95,24 @@ class TestJobsBlackBox(unittest.TestCase):
         self.assertIn("t3", all_jobs)
         #print(f"\n\n>all_jobs -> {all_jobs}")
         self.assertNotEqual(all_jobs["t3"]["status"], "running")
-
+        self.assertIn(stop_res["status"], ("stopped", "finished"))
+        j = all_jobs["t3"]
         # Verify no OS process named “sleep 5” remains
         #rc = subprocess.call(["pgrep", "-f", "sleep 5"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         #self.assertNotEqual(rc, 0)
         # Verify no OS process named "sleep 5" remains
         found = False
-        for proc in psutil.process_iter(['cmdline']):
-            cmd = proc.info.get('cmdline') or []
-            if cmd[:2] == ['sleep', '5']:
+        for proc in psutil.process_iter(['pid','status']):
+            pid = proc.info.get('pid')
+            assert pid != None, "missing a PID?!"
+            if pid== j['last_pid']:
+                print(f"inspecting process: {proc.info}")
+
+            if pid== j['last_pid'] and j['status'] in ['running','sleeping']:
+                print(f"failed process: {proc.info}")
                 found = True
                 break
-        self.assertFalse(found, "Found leftover 'sleep 5' process")
-
-
-
-
-
-
-
-
-
+        self.assertFalse(found, f"Found leftover 'sleep 5' pid:{pid} process")
 
 
     def test_stop_nonexistent_job(self):

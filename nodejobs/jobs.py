@@ -110,23 +110,28 @@ class Jobs():
                         JobFilter.self_id:job_id,
                     }))
         assert  job_id in found_job, "Could not find a job that was just present. Should be impossible. Race condition?"
+        job = found_job[job_id]
         if JobRecord(found_job[job_id]).status == JobRecord.Status.c_running:
+            print(f"inspecting job (A): {job}")
             result = JobRecord({
                         job.last_pid:job.last_pid,
                         job.self_id:job_id,
                         job.status:job.Status.c_failed_stop})
 
         if success:
+            print(f"inspecting job (B): {job}")
             result = JobRecord({
                         JobRecord.last_pid:job.last_pid,
-                        JobRecord.self_id:job_id,
-                        JobRecord.status:job.Status.c_stopped})
+                        JobRecord.self_id:job.self_id,
+                        JobRecord.status:job.status})
         else:
+            print(f"inspecting job (C): {job}")
             result = JobRecord({
                         job.last_pid:job.last_pid,
-                        job.self_id:job_id,
-                        job.status:job.Status.c_failed_stop})
+                        job.self_id:job.self_id,
+                        job.status:job.status})
         db_res = self.jobdb.update_status(result)  
+        print(f"inspecting job (D): {db_res}")
         return result
 
     def job_logs(self,job_id:str) -> Tuple[str,str]:
@@ -141,19 +146,14 @@ class Jobs():
     
     def _update_status(self):
         running_jobs = {}
-        #print(f"...updating ...")  
+        print(f"...updating ...")  
 
         for proc in self.processes.list():
             proc:Process = proc
-            #print(f"...updating proc ... {proc}")  
+            print(f"...updating proc ... {proc}, as {proc.job_id } ")  
             pid, status = os.waitpid(proc.pid, os.WNOHANG)
-            '''
-            File "/Users/computercomputer/justinops/nodejobs/nodejobs/jobs.py", line 132, in _update_status
-                pid, status = os.waitpid(proc.pid, os.WNOHANG)
-                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-            ChildProcessError: [Errno 10] No child processes            
-            '''
-            running_jobs[proc.job_id ] = proc 
+          
+            running_jobs[proc.job_id ] = proc  # Consume the Monkey patched job_id so we can find the right dictionary key to use.
         running_ids = list(running_jobs.keys())
         for actually_running_id in running_ids:
             # print(f"...updating ... {actually_running_id}")  
@@ -163,10 +163,12 @@ class Jobs():
                                             JobRecord.status:JobRecord.Status.c_running
                                             }))
 
-        db_running_list = self.jobdb.list_status(JobFilter({JobRecord.status:JobRecord.Status.c_running}))  
+        db_runningdict = self.jobdb.list_status(JobFilter({JobRecord.status:JobRecord.Status.c_running}))  
+        db_stopping_dict = self.jobdb.list_status(JobFilter({JobRecord.status:JobRecord.Status.c_stopping}))  
+        db_review_dict = {**db_runningdict, **db_stopping_dict}
         #print(db_running_list)
-        for job_id in db_running_list.keys():
-            # print(f"...reviewing {job_id}")  
+        for job_id in db_review_dict.keys():
+            print(f"...reviewing {job_id}")  
             if job_id not in running_ids:
                 # TODO - Review reason for stop to assign correct final status
                 #print(f"RETIRING {job_id}")
