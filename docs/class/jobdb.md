@@ -1,3 +1,5 @@
+### IMPORTANT: To use Jobs, you never need to use the JobDB directly (and should not). The only reason to read this file is to extend or modify the code.
+
 The `JobDB` class is designed to manage and access job-related data stored in a lightweight, schema-driven database. It aims to streamline the process of tracking job statuses, logs, and metadata in a structured format, which can be especially helpful in workflows that involve job scheduling or monitoring. By providing a clear and organized way to record and retrieve job information, `JobDB` helps developers and system operators keep tabs on ongoing tasks without the need for complex database setups. 
 
 Its intended audience includes developers working on job orchestration, logging, or monitoring systems who prefer a straightforward, schema-based approach to data management. The only reason to use this library, would be if you want an all in one, import only, job management solution.
