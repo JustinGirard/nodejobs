@@ -1,5 +1,5 @@
 # .github/workflows/python-package.yml
-name: CI
+name: tests
 
 on:
   push:
