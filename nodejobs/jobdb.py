@@ -1,13 +1,8 @@
 import datetime
-import sys
-sys.path.append("../")
 import os
-try:
-    from decelium_wallet.decelium_wallet.databases.nosqlite import nosqlite
-except:
-    from decelium_wallet.databases.nosqlite import nosqlite
-
+from decelium_wallet.databases.nosqlite import nosqlite
 from decelium_wallet.commands.BaseData import BaseData
+
 
 class JobRecordDict(BaseData):
     f_all = "*"
@@ -21,14 +16,14 @@ class JobRecordDict(BaseData):
 
 
 class JobRecord(BaseData):
-    self_id       : str
-    status      : str
-    last_update : (datetime.datetime, datetime.datetime.utcnow())
-    last_pid    : (int, None)
-    dirname     : (str, None)
-    cwd         : (str,None)
-    logdir      : (str,None)
-    logfile     : (str,None)
+    self_id: str
+    status: str
+    last_update: (datetime.datetime, datetime.datetime.utcnow())
+    last_pid: (int, None)
+    dirname: (str, None)
+    cwd: (str, None)
+    logdir: (str, None)
+    logfile: (str, None)
 
     class Status():
         c_stopping = "stopping"
@@ -47,13 +42,14 @@ class JobRecord(BaseData):
 
 
 class JobFilter(BaseData):
-    self_id     : (str,None)
-    dirname     : (str,None)
-    logdir      : (str,None)
-    logfile     : (str,None)
-    status      : (str,None)
-    cwd         : (str,None)
-    last_update : (datetime.datetime, None)
+    self_id: (str, None)
+    dirname: (str, None)
+    logdir: (str, None)
+    logfile: (str, None)
+    status: (str, None)
+    cwd: (str, None)
+    last_update: (datetime.datetime, None)
+
 
 class JobDB():
     JobRecord = JobRecord

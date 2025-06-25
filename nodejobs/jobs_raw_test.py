@@ -76,8 +76,7 @@ class TestJobsBlackBox(unittest.TestCase):
         stdout, stderr = self.jobs.job_logs(job_id="t2")
         # Both should exist under <temp_home>/tmp_decelium_job_database/job_logs/
         assert stdout.strip() == "hi"
-        assert stderr.strip() == "err"
-        
+        assert stderr.strip() == "err"        
 
     def test_stop_long_running_job(self):
         # 3. run “sleep 5” job → then stop immediately → expect status ‘stopped’ or ‘finished’
