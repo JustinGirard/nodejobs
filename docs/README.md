@@ -1,8 +1,9 @@
+
+[![CI](https://github.com/JustinGirard/nodejobs/actions/workflows/python-package.yml/badge.svg?branch=master)](https://github.com/JustinGirard/nodejobs/actions/workflows/python-package.yml)
+[![Linty](https://github.com/JustinGirard/nodejobs/actions/workflows/lint.yml/badge.svg)](https://github.com/JustinGirard/nodejobs/actions/workflows/lint.yml)
 <p align="center">
 <img width="632" alt="image" src="https://github.com/user-attachments/assets/4cf8dc4e-6daf-4e63-87d8-2ab31f1ada9a" />
 </p>
-
-[![CI](https://github.com/JustinGirard/nodejobs/actions/workflows/python-package.yml/badge.svg?branch=master)](https://github.com/JustinGirard/nodejobs/actions/workflows/python-package.yml)
 
 The `nodejobs` repository runs, tracks, and logs data about external commands without requiring a persistent daemon. This means if you have one or more tools relying on backround jobs, they can each collaborate to start up, run, and manage those jobs without some third party process. You likely only ever need to use the 'Jobs' class, however the complete system is quite simple.
 
