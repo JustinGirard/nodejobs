@@ -1,11 +1,8 @@
-import os
 import sys
 import time
-import tempfile
 import unittest
-from pathlib import Path
 from nodejobs.jobs import Jobs
-from nodejobs.jobdb import JobRecord, JobFilter, JobRecordDict
+from nodejobs.jobdb import JobRecord
 import subprocess
 import shutil
 
@@ -19,7 +16,7 @@ class TestJobsBlackBox(unittest.TestCase):
         except FileNotFoundError:
             pass
         self.jobs = Jobs(db_path=self.data_dir)
-        #print("DONE INIT--------->")
+        # print("DONE INIT--------->")
 
     def tearDown(self):
         # Clean up the test_data directory after each test
@@ -28,7 +25,9 @@ class TestJobsBlackBox(unittest.TestCase):
         except FileNotFoundError:
             pass
 
-    def _wait_for_status(self, job_id: str, desired_status: str, timeout: float = 5.0) -> bool:
+    def _wait_for_status(
+        self, job_id: str, desired_status: str, timeout: float = 5.0
+    ) -> bool:
         """
         Poll list_status() until the job’s status matches desired_status
         or until timeout (in seconds) elapses.
@@ -46,8 +45,7 @@ class TestJobsBlackBox(unittest.TestCase):
     def test_run_to_finished(self):
         # 1. run a short shell command → expect “running” → then “finished”
         result = self.jobs.run(
-            command='echo "starting"; sleep 3; echo "done"',
-            job_id="t1"
+            command='echo "starting"; sleep 3; echo "done"', job_id="t1"
         )
         result = JobRecord(result)  # runtime type‐check
         self.assertEqual(result.self_id, "t1")
@@ -60,29 +58,34 @@ class TestJobsBlackBox(unittest.TestCase):
         self.assertEqual(rec.status, JobRecord.Status.c_running)
 
         # Wait up to 7 seconds for it to finish
-        finished = self._wait_for_status("t1", JobRecord.Status.c_finished, timeout=7.0)
+        finished = self._wait_for_status("t1",
+                                         JobRecord.Status.c_finished,
+                                         timeout=7.0)
         status_rec = self.jobs.get_status(job_id="t1")
         self.assertTrue(
             finished,
-            f"Job t1 did not transition to ‘finished’ in time; final status: {status_rec}"
+            f"Job t1 did not mv to ‘finished’ ]; status: {status_rec}",
         )
 
     def test_job_logs_capture(self):
         # 2. run a short Python command that writes to stdout and stderr
         py = sys.executable
-        cmd = (
-            f"{py} -c "
-            "\"import sys; print('hi'); sys.stderr.write('err\\n');\""
-        )
+        py_code = "\"import sys; print('hi'); sys.stderr.write('err\\n');\""
+        cmd = f"{py} -c {py_code}"
         result = self.jobs.run(command=cmd, job_id="t2")
         result = JobRecord(result)  # runtime type‐check
         self.assertIn(
             result.status,
-            (JobRecord.Status.c_running, JobRecord.Status.c_finished)
+            (
+                JobRecord.Status.c_running,
+                JobRecord.Status.c_finished
+            )
         )
 
         # Wait for immediate finish
-        finished = self._wait_for_status("t2", JobRecord.Status.c_finished, timeout=2.0)
+        finished = self._wait_for_status("t2",
+                                         JobRecord.Status.c_finished,
+                                         timeout=2.0)
         self.assertTrue(finished, "Job t2 did not finish in time")
 
         # Retrieve log contents
@@ -91,8 +94,8 @@ class TestJobsBlackBox(unittest.TestCase):
         self.assertEqual(stderr_text.strip(), "err")
 
     def test_stop_long_running_job(self):
-        # 3. run “sleep 5” job → then stop immediately → expect status ‘stopped’ or ‘finished’
-        result = self.jobs.run(command="sleep 5", job_id="t3")
+        result = self.jobs.run(command="sleep 5",
+                               job_id="t3")
         result = JobRecord(result)  # runtime type‐check
         self.assertEqual(result.status, JobRecord.Status.c_running)
 
@@ -104,7 +107,10 @@ class TestJobsBlackBox(unittest.TestCase):
         stop_res = JobRecord(stop_res)  # type‐check if not None
         self.assertIn(
             stop_res.status,
-            (JobRecord.Status.c_stopped, JobRecord.Status.c_finished)
+            (
+                JobRecord.Status.c_stopped,
+                JobRecord.Status.c_finished
+            )
         )
 
         # After listing status, it should not remain “running”
@@ -127,15 +133,10 @@ class TestJobsBlackBox(unittest.TestCase):
         res = self.jobs.stop(job_id="no_such")
         self.assertIsNone(res)
 
-
     def test_list_status_filtering(self):
-        # 6. Start three jobs: a (sleep 10), b (invalid command), c (immediate Python print).
-        #    Then verify filters on status and dirname.
-
         # Job “a” - long sleep (will remain running)
         res_a = self.jobs.run(
-            command='echo "starting"; sleep 10; echo "done"',
-            job_id="a"
+            command='echo "starting"; sleep 10; echo "done"', job_id="a"
         )
         res_a = JobRecord(res_a)  # runtime type‐check
         time.sleep(0.2)  # let “a” actually enter “running”
@@ -149,30 +150,38 @@ class TestJobsBlackBox(unittest.TestCase):
 
         # Job “c” - immediate finish
         py = sys.executable
-        cmd_c = f'{py} -c "print(\'x\')"'
+        cmd_c = f"{py} -c \"print('x')\""
         res_c = self.jobs.run(command=cmd_c, job_id="c")
         res_c = JobRecord(res_c)
         self.assertIn(
             res_c.status,
-            (JobRecord.Status.c_running, JobRecord.Status.c_finished)
+            (
+                JobRecord.Status.c_running,
+                JobRecord.Status.c_finished
+            )
         )
 
         # Give time for “b” and “c” to finish; “a” should still be running
         time.sleep(0.5)
 
         # Filter by running → only “a” should appear
-        running_jobs = self.jobs.list_status(filter={JobRecord.status: JobRecord.Status.c_running})
+        running_jobs = self.jobs.list_status(
+            filter={JobRecord.status: JobRecord.Status.c_running}
+        )
         self.assertIn("a", running_jobs)
         self.assertNotIn("b", running_jobs)
         self.assertNotIn("c", running_jobs)
 
-        # Filter by finished → only “c” should appear (b was failed_start, a is still running)
-        finished_jobs = self.jobs.list_status(filter={JobRecord.status: JobRecord.Status.c_finished})
+        finished_jobs = self.jobs.list_status(
+            filter={JobRecord.status: JobRecord.Status.c_finished}
+        )
         self.assertIn("c", finished_jobs)
         self.assertNotIn("a", finished_jobs)
 
         # Filter by failed_start → only “b” should appear
-        failed_jobs = self.jobs.list_status(filter={JobRecord.status: JobRecord.Status.c_failed_start})
+        failed_jobs = self.jobs.list_status(
+            filter={JobRecord.status: JobRecord.Status.c_failed_start}
+        )
         self.assertIn("b", failed_jobs)
 
         # Filter by dirname → single‐element dict
@@ -181,7 +190,9 @@ class TestJobsBlackBox(unittest.TestCase):
         self.assertIn("b", single_b)
 
         # Finally wait for “a” to finish on its own (timeout 10 seconds)
-        finished_a = self._wait_for_status("a", JobRecord.Status.c_finished, timeout=10.0)
+        finished_a = self._wait_for_status(
+            "a", JobRecord.Status.c_finished, timeout=10.0
+        )
         self.assertTrue(finished_a, "Job a did not finish in time")
 
 
