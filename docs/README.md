@@ -2,7 +2,9 @@
 <img width="632" alt="image" src="https://github.com/user-attachments/assets/4cf8dc4e-6daf-4e63-87d8-2ab31f1ada9a" />
 </p>
 
-The `nodejobs` repository runs, tracks, and logs data about external commands without requiring a persistent daemon. This means if you have one or more tools relaying on some backround processes, they can each collaborate to start up, run, and manage those jobs without needed some long running process or manager in the background. You likely only ever need to use the 'Jobs' class, however the complete system is quite simple.
+[![CI](https://github.com/JustinGirard/nodejobs/actions/workflows/python-package.yml/badge.svg?branch=master)](https://github.com/JustinGirard/nodejobs/actions/workflows/python-package.yml)
+
+The `nodejobs` repository runs, tracks, and logs data about external commands without requiring a persistent daemon. This means if you have one or more tools relying on backround jobs, they can each collaborate to start up, run, and manage those jobs without some third party process. You likely only ever need to use the 'Jobs' class, however the complete system is quite simple.
 
 ### Install
 ```python
@@ -73,6 +75,8 @@ Below are some example use cases you can likely copy and paste into your applica
 from nodejobs import Jobs
 
 # Initialize the Jobs manager with the database directory
+jobs_manager = Jobs() # Will use a standard directory in the current user's home. In general leaving this as default means all jobs will share the same global log path!
+# or
 jobs_manager = Jobs(db_path="/path/to/job/database")
 ```
 
@@ -112,7 +116,7 @@ Allows monitoring of individual job progress and state.
 
 ---
 
-### 4. **Listing and Filtering Jobs**
+# 4. **Listing and Filtering Jobs**
 
 ```python
 from nodejobs.jobdb import JobRecord
@@ -129,7 +133,7 @@ Enables batch retrieval of jobs based on criteria like status, self ID patterns,
 
 ---
 
-### 5. **Retrieving Job Logs**
+# 5. **Retrieving Job Logs**
 
 ```python
 # Fetch stdout and stderr logs for the job
@@ -146,7 +150,7 @@ Facilitates debugging and auditing by accessing runtime logs.
 
 ---
 
-### 6. **Stopping a Running Job**
+# 6. **Stopping a Running Job**
 
 ```python
 # Send stop signal to the job
@@ -158,7 +162,7 @@ Provides control over job execution, allowing manual interruption.
 
 ---
 
-### 7. **Monitoring and Updating Job Status in a Loop**
+# 7. **Monitoring and Updating Job Status in a Loop**
 
 ```python
 import time
@@ -175,7 +179,7 @@ Supports real-time monitoring and dynamic decision-making based on job state.
 
 ---
 
-### 8. **Handling Non-Existent Jobs Gracefully**
+# 8. **Handling Non-Existent Jobs Gracefully**
 
 ```python
 # Attempt to get status of a job that doesn't exist
