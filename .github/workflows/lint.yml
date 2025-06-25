@@ -1,4 +1,4 @@
-name: Linty
+name: Lint
 
 on:
   push:
