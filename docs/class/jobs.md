@@ -65,28 +65,6 @@ jobs_manager = Jobs(db_path='/path/to/job/data')
 
 ---
 
-### `__find(self, job_id: str) -> JobRecord or None`  
-
-- Searches for a specific job record by its unique identifier, returning the corresponding `JobRecord` if it exists, or `None` otherwise. This internal method assists in locating job details for further operations like status checks or log retrievals.  
-
-- **Parameters**  
-• `job_id` (`str`): The unique identifier assigned to a job during creation or submission.  
-
-- **Returns**  
-• `JobRecord` or `None`: The found job record if present; otherwise `None`.  
-
-- **Raises**  
-• None explicitly; handles missing records gracefully.  
-
-- **Examples**  
-```python
-job_record = jobs_manager._Jobs__find("job123")
-if job_record:
-    print(f"Found job with status: {job_record.status}")
-```  
-
----
-
 ### `run(self, command: str, job_id: str, cwd: str = None) -> JobRecord` 🚀  
 
 - Starts a new job by executing a specified command in a subprocess, associates it with a unique job ID, and tracks its execution status. It updates internal records and logs output, returning a `JobRecord` that reflects the current state of the job.  

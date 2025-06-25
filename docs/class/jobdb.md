@@ -1,6 +1,10 @@
+
+
 The `JobDB` class is designed to manage and access job-related data stored in a lightweight, schema-driven database. It aims to streamline the process of tracking job statuses, logs, and metadata in a structured format, which can be especially helpful in workflows that involve job scheduling or monitoring. By providing a clear and organized way to record and retrieve job information, `JobDB` helps developers and system operators keep tabs on ongoing tasks without the need for complex database setups. 
 
-Its intended audience includes developers working on job orchestration, logging, or monitoring systems who prefer a straightforward, schema-based approach to data management. The class adopts an object-oriented design combined with simple database interactions, abstracting away raw SQL queries while ensuring data validation and consistency through defined data classes.
+### IMPORTANT: To use Jobs, you never need to use the JobDB directly (and should not). The only reason to read this file is to extend or modify the code.
+
+Its intended audience includes developers working on job orchestration, logging, or monitoring systems who prefer a straightforward, schema-based approach to data management. The only reason to use this library, would be if you want an all in one, import only, job management solution.
 
 ### Key Concepts & Responsibilities  
 - **Managing job records:** `JobDB` offers methods to insert, update, and retrieve information about jobs, such as statuses, logs, and metadata.  
@@ -19,8 +23,8 @@ job_db = JobDB(db_path="/path/to/job/storage")
 *Updating a job status:*  
 ```python
 job_record = {
-    JobRecord.f_self_id: "job123",
-    JobRecord.f_status: JobRecord.Status.c_running,
+    JobRecord.self_id: "job123",
+    JobRecord.status: JobRecord.Status.c_running,
     # additional fields...
 }
 job_db.update_status(job_record)
