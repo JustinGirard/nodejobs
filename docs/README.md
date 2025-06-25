@@ -75,6 +75,8 @@ Below are some example use cases you can likely copy and paste into your applica
 from nodejobs import Jobs
 
 # Initialize the Jobs manager with the database directory
+jobs_manager = Jobs() # Will use a standard directory in the current user's home. In general leaving this as default means all jobs will share the same global log path!
+# or
 jobs_manager = Jobs(db_path="/path/to/job/database")
 ```
 
@@ -114,7 +116,7 @@ Allows monitoring of individual job progress and state.
 
 ---
 
-### 4. **Listing and Filtering Jobs**
+# 4. **Listing and Filtering Jobs**
 
 ```python
 from nodejobs.jobdb import JobRecord
@@ -131,7 +133,7 @@ Enables batch retrieval of jobs based on criteria like status, self ID patterns,
 
 ---
 
-### 5. **Retrieving Job Logs**
+# 5. **Retrieving Job Logs**
 
 ```python
 # Fetch stdout and stderr logs for the job
@@ -148,7 +150,7 @@ Facilitates debugging and auditing by accessing runtime logs.
 
 ---
 
-### 6. **Stopping a Running Job**
+# 6. **Stopping a Running Job**
 
 ```python
 # Send stop signal to the job
@@ -160,7 +162,7 @@ Provides control over job execution, allowing manual interruption.
 
 ---
 
-### 7. **Monitoring and Updating Job Status in a Loop**
+# 7. **Monitoring and Updating Job Status in a Loop**
 
 ```python
 import time
@@ -177,7 +179,7 @@ Supports real-time monitoring and dynamic decision-making based on job state.
 
 ---
 
-### 8. **Handling Non-Existent Jobs Gracefully**
+# 8. **Handling Non-Existent Jobs Gracefully**
 
 ```python
 # Attempt to get status of a job that doesn't exist
