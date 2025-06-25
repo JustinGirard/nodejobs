@@ -4,7 +4,7 @@
 
 [![CI](https://github.com/JustinGirard/nodejobs/actions/workflows/python-package.yml/badge.svg?branch=master)](https://github.com/JustinGirard/nodejobs/actions/workflows/python-package.yml)
 
-The `nodejobs` repository runs, tracks, and logs data about external commands without requiring a persistent daemon. This means if you have one or more tools relaying on some backround processes, they can each collaborate to start up, run, and manage those jobs without needed some long running process or manager in the background. You likely only ever need to use the 'Jobs' class, however the complete system is quite simple.
+The `nodejobs` repository runs, tracks, and logs data about external commands without requiring a persistent daemon. This means if you have one or more tools relying on backround jobs, they can each collaborate to start up, run, and manage those jobs without some third party process. You likely only ever need to use the 'Jobs' class, however the complete system is quite simple.
 
 ### Install
 ```python
