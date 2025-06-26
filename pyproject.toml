@@ -14,7 +14,7 @@ authors = [
 ]
 
 classifiers = [
-  "Development Status :: Paused - Audience Testing",
+  "Development Status :: 2 - Pre-Alpha",
   "Intended Audience :: Developers",
   "Topic :: System :: Monitoring",
   "License :: OSI Approved :: MIT License",
