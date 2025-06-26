@@ -1,23 +1,30 @@
 name: publish-to-pypi
 
 on:
-  workflow_dispatch:
+  workflow_dispatch:      
+
+permissions:
+  id-token: write       
 
 jobs:
   publish:
     runs-on: ubuntu-latest
-    environment: pypi
+    environment: pypi   
+
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout
+        uses: actions/checkout@v3
 
-      - uses: actions/setup-python@v4
-        with: { python-version: "3.11" }
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
 
-      - run: |
+      - name: Build distributions
+        run: |
           python -m pip install --upgrade build
           python -m build
 
-      - uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          user: __token__
-          password: ${{ secrets.PYPI_API_TOKEN }}
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        # no `with: user/password` needed for OIDC trusted publishing :contentReference[oaicite:2]{index=2}
