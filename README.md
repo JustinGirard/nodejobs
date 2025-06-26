@@ -1,15 +1,16 @@
+### Introduction
+The `nodejobs` repository runs, tracks, and logs data about external commands without requiring a persistent daemon. This means if you have one or more tools relaying on come backround processes, they can each collaborate to start up, run, and manage those jobs without needed some long running process or manager in the background. 
 
-[![CI](https://github.com/JustinGirard/nodejobs/actions/workflows/python-package.yml/badge.svg?branch=master)](https://github.com/JustinGirard/nodejobs/actions/workflows/python-package.yml)
-[![Linty](https://github.com/JustinGirard/nodejobs/actions/workflows/lint.yml/badge.svg)](https://github.com/JustinGirard/nodejobs/actions/workflows/lint.yml)
-<p align="center">
-<img width="632" alt="image" src="https://github.com/user-attachments/assets/4cf8dc4e-6daf-4e63-87d8-2ab31f1ada9a" />
-</p>
+It offers a simple API to spawn subprocesses, update job statuses, and persist metadata and logs in flat files that can be cracked open in a pinch, (simply in `JOB_DB/jobname/stdout*.txt` files!)  If you just need a tiny library to run and check on a few jobs along with your script, you might just use `nodejobs`.
 
-The `nodejobs` repository runs, tracks, and logs data about external commands without requiring a persistent daemon. This means if you have one or more tools relying on backround jobs, they can each collaborate to start up, run, and manage those jobs without some third party process. You likely only ever need to use the 'Jobs' class, however the complete system is quite simple.
+As for the code, its clean and extensible-- it has been for us at least. Core components such as `BaseData`, `JobRecord`, and `JobFilter` define and validate the schema for each job records, helping to prevent key-mismatch errors and ensuring data consistency. Status updates occur whenever you invoke a job command, so there’s no background service to manage. Common use cases include automated install scripts, deployment tasks, and data-transfer operations. Designed for minimalism and extensibility, nodejobs can function as a standalone utility or as the foundation for a bespoke job-management solution. If you are looking for a small job running to build on top of, this might be a good fit. Its large enough to have structure, and safety, but small enough you can choose what you want to add in.
 
 ### Install
 ```python
-pip install git+https://github.com/JustinGirard/nodejobs/@master
+pip install decelium-nodejobs
+# or
+python -m pip install decelium-nodejobs
+
 ```
 
 ### Use
@@ -17,27 +18,24 @@ pip install git+https://github.com/JustinGirard/nodejobs/@master
 from nodejobs import Jobs, JobRecord
 
 # Create a Jobs manager with a specified database path
-jobs_manager = Jobs(db_path="./some/tracking/location")
-# * If db_path is not passed, a hard coded directory in the current users home directory will be chosen
+jobs_manager = Jobs(db_path="/path/to/job_db/dir")
+
+# Starts your job -- its status is returned as job_record
 job_record = jobs_manager.run(command="python script.py", job_id="job_001")
+
+# Pull and verify job status
 job_record:JobRecord = jobs_manager.get_status(job_id="job_001")
 assert job_record.status == JobRecord.Status.c_finished
 
+# How to stop a job
 stdout:str, stder:str = jobs_manager.job_logs(job_id="job_001")
 jobs_manager.stop(job_id="job_001")
 
 ```
-<p align="center">
-<img width="699" alt="image" src="https://github.com/user-attachments/assets/926e70a9-9629-4ca2-8ad2-dba467b19048" />
-</p>
-It offers a simple API to spawn subprocesses, update job statuses, and persist metadata and logs in flat files that can be cracked open in a pinch, (simply in `JOB_DB/jobname/stdout*.txt` files!)  If you just need a tiny library to run and check on a few jobs along with your script, you might just use `nodejobs`.
-
-As for the code, its clean and extensible-- it has been for us at least. Core components such as `BaseData`, `JobRecord`, and `JobFilter` define and validate the schema for each job records, helping to prevent key-mismatch errors and ensuring data consistency. Status updates occur whenever you invoke a job command, so there’s no background service to manage. Common use cases include automated install scripts, deployment tasks, and data-transfer operations. Designed for minimalism and extensibility, nodejobs can function as a standalone utility or as the foundation for a bespoke job-management solution. If you are looking for a small job running to build on top of, this might be a good fit. Its large enough to have structure, and safety, but small enough you can choose what you want to add in.
-
 
 ### Motivation
 
-It felt silly to write yet another job runner, however I always felt like I needed something more than subprocess, but something way less complex than a full on task managent solution. Importantly, I write code that works on edge devices, and so working towards pi and micropython support is important for me as well. 
+It felt silly to write yet another job runner, however I always felt like I needed something more than subprocess, but something way less complex than a full on task managent solution. Importantly, I write code that works on edge devices, and so working towards pi and micropython support is important for me as well. Overall, if I need some little set up stages to run, or if I need a script to kick off instructions, I just import and run a nodejob. Its called "nodejobs" as it is an internal tool on a Decelium Node - a server we use internally.
 
 These are the motivations:
 
@@ -76,8 +74,6 @@ Below are some example use cases you can likely copy and paste into your applica
 from nodejobs import Jobs
 
 # Initialize the Jobs manager with the database directory
-jobs_manager = Jobs() # Will use a standard directory in the current user's home. In general leaving this as default means all jobs will share the same global log path!
-# or
 jobs_manager = Jobs(db_path="/path/to/job/database")
 ```
 
@@ -117,7 +113,7 @@ Allows monitoring of individual job progress and state.
 
 ---
 
-# 4. **Listing and Filtering Jobs**
+### 4. **Listing and Filtering Jobs**
 
 ```python
 from nodejobs.jobdb import JobRecord
@@ -134,7 +130,7 @@ Enables batch retrieval of jobs based on criteria like status, self ID patterns,
 
 ---
 
-# 5. **Retrieving Job Logs**
+### 5. **Retrieving Job Logs**
 
 ```python
 # Fetch stdout and stderr logs for the job
@@ -151,7 +147,7 @@ Facilitates debugging and auditing by accessing runtime logs.
 
 ---
 
-# 6. **Stopping a Running Job**
+### 6. **Stopping a Running Job**
 
 ```python
 # Send stop signal to the job
@@ -163,7 +159,7 @@ Provides control over job execution, allowing manual interruption.
 
 ---
 
-# 7. **Monitoring and Updating Job Status in a Loop**
+### 7. **Monitoring and Updating Job Status in a Loop**
 
 ```python
 import time
@@ -180,7 +176,7 @@ Supports real-time monitoring and dynamic decision-making based on job state.
 
 ---
 
-# 8. **Handling Non-Existent Jobs Gracefully**
+### 8. **Handling Non-Existent Jobs Gracefully**
 
 ```python
 # Attempt to get status of a job that doesn't exist

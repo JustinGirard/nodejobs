@@ -1,8 +1,7 @@
 import datetime
 import os
-from decelium_wallet.databases.nosqlite import nosqlite
-from decelium_wallet.commands.BaseData import BaseData
-
+from nodejobs.dependencies.nosqlite import nosqlite
+from nodejobs.dependencies.BaseData import BaseData
 
 class JobRecordDict(BaseData):
     f_all = "*"
