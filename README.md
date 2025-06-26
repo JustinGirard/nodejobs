@@ -1,5 +1,5 @@
 
-[![CI](https://github.com/JustinGirard/nodejobs/actions/workflows/python-package.yml/badge.svg?branch=master)](https://github.com/JustinGirard/nodejobs/actions/workflows/build-and-test.yml)
+
 [![Linty](https://github.com/JustinGirard/nodejobs/actions/workflows/lint.yml/badge.svg)](https://github.com/JustinGirard/nodejobs/actions/workflows/lint.yml)
 <p align="center">
 <img width="632" alt="image" src="https://github.com/user-attachments/assets/4cf8dc4e-6daf-4e63-87d8-2ab31f1ada9a" />
