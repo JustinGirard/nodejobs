@@ -4,7 +4,8 @@ on:
   workflow_dispatch:      
 
 permissions:
-  id-token: write       
+  contents: read     
+  id-token: write   
 
 jobs:
   publish:
