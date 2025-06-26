@@ -14,7 +14,7 @@ authors = [
 ]
 
 classifiers = [
-  "Development Status :: 3 - Alpha",
+  "Development Status :: Paused - Audience Testing",
   "Intended Audience :: Developers",
   "Topic :: System :: Monitoring",
   "License :: OSI Approved :: MIT License",
@@ -33,3 +33,4 @@ dependencies = [
 
 [tool.setuptools]
 packages = { find = { exclude = ["tests*", "docs*"] } }
+
