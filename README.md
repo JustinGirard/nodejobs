@@ -1,8 +1,6 @@
 ### Introduction
-The `nodejobs` repository runs, tracks, and logs data about external commands without requiring a persistent daemon. This means if you have one or more tools relaying on come backround processes, they can each collaborate to start up, run, and manage those jobs without needed some long running process or manager in the background. 
+The `nodejobs` repository runs, tracks, and logs data about external commands without requiring a persistent daemon. 
 
-
-It offers a simple API to spawn subprocesses, update job statuses, and persist metadata and logs in flat files that can be cracked open in a pinch, (simply in `JOB_DB/jobname/stdout*.txt` files!)  If you just need a tiny library to run and check on a few jobs along with your script, you might just use `nodejobs`.
 
 [![Linty](https://github.com/JustinGirard/nodejobs/actions/workflows/lint.yml/badge.svg)](https://github.com/JustinGirard/nodejobs/actions/workflows/lint.yml)
 <p align="center">
