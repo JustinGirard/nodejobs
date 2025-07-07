@@ -11,9 +11,9 @@ As for the code, its clean and extensible-- it has been for us at least. Core co
 
 ### Install
 ```python
-pip install decelium-nodejobs
+pip install nodejobs
 # or
-python -m pip install decelium-nodejobs
+python -m pip install nodejobs
 
 ```
 
