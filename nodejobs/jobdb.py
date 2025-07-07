@@ -3,6 +3,7 @@ import os
 from nodejobs.dependencies.nosqlite import nosqlite
 from nodejobs.dependencies.BaseData import BaseData
 
+
 class JobRecordDict(BaseData):
     f_all = "*"
 
