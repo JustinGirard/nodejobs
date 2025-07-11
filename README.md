@@ -1,7 +1,7 @@
 ### Introduction
 The `nodejobs` repository runs, tracks, and logs data about external commands without requiring a persistent daemon. 
 
-
+[![tests](https://github.com/JustinGirard/nodejobs/actions/workflows/build-and-test.yml/badge.svg)](https://github.com/JustinGirard/nodejobs/actions/workflows/build-and-test.yml)
 [![Linty](https://github.com/JustinGirard/nodejobs/actions/workflows/lint.yml/badge.svg)](https://github.com/JustinGirard/nodejobs/actions/workflows/lint.yml)
 <p align="center">
 <img width="632" alt="image" src="https://github.com/user-attachments/assets/4cf8dc4e-6daf-4e63-87d8-2ab31f1ada9a" />
@@ -11,9 +11,9 @@ As for the code, its clean and extensible-- it has been for us at least. Core co
 
 ### Install
 ```python
-pip install decelium-nodejobs
+pip install nodejobs
 # or
-python -m pip install decelium-nodejobs
+python -m pip install nodejobs
 
 ```
 
