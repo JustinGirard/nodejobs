@@ -99,6 +99,7 @@ class JobDB:
               (often the new record’s ID or a status code).
         """
         clean_job = JobRecord(job).clean()
+        print("UPDATING STATUS "+ str(clean_job))
         resp = self.jobdb.execute(
             qtype="upsert",
             source="process_status",

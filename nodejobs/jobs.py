@@ -182,7 +182,10 @@ class Jobs:
             proc: Process = proc
             if self.verbose is True:
                 print(f"...updating proc ... {proc}, as {proc.job_id } ")
-            os.waitpid(proc.pid, os.WNOHANG)
+            try:
+                os.waitpid(proc.pid, os.WNOHANG)
+            except:
+                pass
             # Consume the Monkey patched job_id so
             # we can find the right dictionary key to use.
             running_jobs[proc.job_id] = (

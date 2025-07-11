@@ -163,6 +163,8 @@ class BaseService():
         return value    
     @classmethod
     def run_cli(cls):
+        print("CLI")
+        return
         """This method parses CLI arguments, converts them to kwargs, and passes them to run."""
         # Create a parser that accepts positional arguments
         parser = argparse.ArgumentParser(description="Generic service CLI for any BaseService subclass.")
@@ -197,8 +199,9 @@ class BaseService():
         #print(cls)
 
         kwargs = cls.add_depth(kwargs)
-        #print(json.dumps(kwargs, indent = 4))
-        kwargs = cls.add_depth(kwargs)
+        print("ADD DEPPTHU DEBUG")
+        print(json.dumps(kwargs, indent = 4))
+        #kwargs = cls.add_depth(kwargs)
         #print("Debug json:"+json.dumps(kwargs, indent = 4))
         #return
         result = cls.run(**kwargs)
@@ -279,7 +282,9 @@ class BaseService():
             # Always quote the key.
             formatted_key = f'"{key}"'
             # Format the value: quote it if it's a string.
-            if isinstance(value, str):
+            if isinstance(value, bool):
+                formatted_value = "True" if value else "False"            
+            elif isinstance(value, str):
                 formatted_value = f'"{value}"'
             else:
                 formatted_value = str(value)
@@ -321,6 +326,8 @@ class BaseService():
 
         nested = {}
         for flat_key, value in flat.items():
+            if isinstance(value, str) and value.lower() in ("true", "false"):
+                value = True if value.lower() == "true" else False            
             keys = flat_key.split(sep)
             is_root_index = keys[0].isdigit()
             if is_root_index:
@@ -408,10 +415,7 @@ class BaseService():
 
         _flatten(nested, parent_key)
         return flat
-    '''
-_cmd_start kwargs: {'protocol': 'http', 'host': '127.0.0.1', 'port': '8003', 'url': '/do_upload', 'command_uri': '/cmd', 'upload_dir': './tmp/upload', 'settings_dir': './tmp/settings', 'tokens': '<<DSH_SERVER_TOKEN_LIST>>', 'openai_api_key': '<<OPENAI_API_KEY>>', 'published': []}
-_cmd_start cmdDict: {'protocol': 'http', 'host': '127.0.0.1', 'port': '8003', 'url': '/do_upload', 'command_uri': '/cmd', 'upload_dir': './tmp/upload', 'settings_dir': './tmp/settings', 'tokens': '<<DSH_SERVER_TOKEN_LIST>>', 'openai_api_key': '<<OPENAI_API_KEY>>'}
-'''
+
 
     @classmethod
     def compile_for(cls, platform: str = "auto", onefile: bool = True, output_dir: str = None):
