@@ -7,8 +7,7 @@ import sys
 import psutil
 import unittest
 from nodejobs.run_job import RunningProcessSpec
-import nodejobs
- 
+import nodejobs 
 
 class TestRunJobMonolithic(unittest.TestCase):
     def test_run_job_lifecycle(self):
@@ -52,7 +51,7 @@ class TestRunJobMonolithic(unittest.TestCase):
 
         #######
         #######
-        #runner = os.path.abspath("run_job.py")
+        # runner = os.path.abspath("run_job.py")
         runner = nodejobs.run_job.__file__
         p = subprocess.Popen(
             [sys.executable, runner, '--job_id', job_id, '--json_path', json_path],
