@@ -190,7 +190,6 @@ class Jobs:
             running_jobs[proc.job_id] = (
                 proc
             )
-        print(f"-- have running jobs {running_jobs} ")
         running_ids = list(running_jobs.keys())
         for actually_running_id in running_ids:
             self.jobdb.update_status(

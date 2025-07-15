@@ -47,7 +47,6 @@ class TestJobsBlackBox(unittest.TestCase):
         time.sleep(1)
         # print("\nLIST STATUS \n\n\n\n")
         all_jobs = self.jobs.list_status()
-        print(f"ALL  JOBS {all_jobs} ")
         self.assertIn(job_id_test, all_jobs)
         self.assertEqual(all_jobs[job_id_test]["status"], "running")
         self.assertEqual(result["last_pid"], all_jobs[job_id_test]["last_pid"])
