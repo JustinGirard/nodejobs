@@ -34,10 +34,11 @@ class Processes:
     def build_run_job_command(
             self,
             job_id: str,
-            command: str,
+            command: list,
             cwd: str = None,
             envs: dict = None,
             logdir: str = ".") -> list:
+        assert command is list, "Only support list based commands. Please adopt a list of strings"
         """
         Service function for tests: writes a {job_id}.json spec into logdir
         and returns the list of arguments to invoke run_job.py.
@@ -60,7 +61,6 @@ class Processes:
         wrapper = os.path.join(os.path.dirname(__file__), "run_job.py")
         assert os.path.exists(wrapper), f"Cant find the run job kernel {wrapper}"
         cmd = [sys.executable, wrapper, "--job_id", job_id, "--json_path", spec_path]
-        #print(' '.join(cmd))
 
         print("===== DEBUG RUN INFO =====")
         print(" Job ID       :", job_id)
@@ -70,12 +70,12 @@ class Processes:
         print(" Log dir      :", logdir,        "exists?", os.path.isdir(logdir))
         print(" Env vars     :", envs)
         print(" Full command :", command)
-        print("===========================")             
+        print("===========================")
         return cmd
 
     def run(
         self,
-        command: str,
+        command: list,
         job_id: str,
         envs: dict = None,
         cwd: str = None,
@@ -106,7 +106,7 @@ class Processes:
                             envs=envs,
                             logdir=logdir)
         print(f"running [{command}]")
-   
+
         process = subprocess.Popen(
             command,
             shell=False,

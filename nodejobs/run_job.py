@@ -8,10 +8,11 @@ import psutil
 import time
 import threading
 from nodejobs.dependencies.BaseData import BaseData
+from typing import List
 
 
 class RunningProcessSpec(BaseData):
-    command: str
+    command: List[str]
     cwd: str
     job_id: str
     envs: (dict, None)
@@ -71,9 +72,10 @@ class RunJob:
             )
 
         # launch child with pipes for both streams, unbuffered at Python level
+
         proc = subprocess.Popen(
             self.command,
-            shell=True,
+            shell=False,
             cwd=self.cwd,
             env={**os.environ, **self.envs},
             stdout=subprocess.PIPE,

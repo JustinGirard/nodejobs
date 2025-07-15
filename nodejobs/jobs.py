@@ -4,7 +4,7 @@ from pathlib import Path
 import os
 import time
 from psutil import Process
-from typing import Tuple
+from typing import Tuple, Union, List
 import subprocess
 
 
@@ -35,13 +35,15 @@ class Jobs:
             job = list(jobs.values())[0]
         return job
 
-    def run(self, command: str, job_id: str, cwd: str = None):
+    def run(self, command: Union[str, List[str]], job_id: str, cwd: str = None):
+        print(f"a.RUNNING {command}")
+
         assert len(job_id) > 0, " Job name too short"
         if cwd is None:
             cwd = os.getcwd()
         logdir = f"{self.db_path}/job_logs/"
         os.makedirs(logdir, exist_ok=True)
-        command = command.strip()
+
         logfile = job_id
         self.jobdb.update_status(
             JobRecord(
@@ -56,6 +58,10 @@ class Jobs:
                 }
             )
         )
+        if command is str:
+            command = command.strip()
+            command = command.split(' ')
+        print(f"RUNNING {command}")
         start_proc: subprocess.Popen = self.processes.run(
             command=command,
             job_id=job_id,

@@ -25,7 +25,7 @@ class TestRunJobMonolithic(unittest.TestCase):
         # 3) Create a job spec and save it using BaseData, json, and open
         job_id = "job1_uex67"
         raw_spec = {
-            "command": " echo start; sleep 3; echo fin",
+            "command": ["bash", "-c", "echo start;sleep 3;echo fin"],
             "cwd": './',
             "job_id": job_id,
             "envs": None
@@ -54,6 +54,7 @@ class TestRunJobMonolithic(unittest.TestCase):
         #######
         # runner = os.path.abspath("run_job.py")
         runner = nodejobs.run_job.__file__
+        print("DEBUG:> "+' '.join([sys.executable, runner, '--job_id', job_id, '--json_path', json_path]))
         p = subprocess.Popen(
             [sys.executable, runner, '--job_id', job_id, '--json_path', json_path],
             stdout=subprocess.PIPE,

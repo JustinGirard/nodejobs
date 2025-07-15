@@ -39,7 +39,7 @@ class TestJobsBlackBox(unittest.TestCase):
         # 1. run “sleep 1” job → expect “running” → then “finished”
         job_id_test = "fbadfkadbkjfda"
         result = self.jobs.run(
-            command="""echo "starting"; sleep 3; echo "done" """, job_id=job_id_test
+            command=["bash", "-c", """echo "starting"; sleep 3; echo "done" """], job_id=job_id_test
         )
         # print(f"INITIAL RESULT {result} ")
         self.assertEqual(result["self_id"], job_id_test)
@@ -63,7 +63,7 @@ class TestJobsBlackBox(unittest.TestCase):
         # 2. run a short Python command that writes to stdout and stderr
         py = sys.executable
         py_code = "import sys; print('hi'); sys.stderr.write('err\\n');"
-        cmd = f"{py} -c \"{py_code}\""
+        cmd = [py, "-c", py_code]
         result = self.jobs.run(command=cmd, job_id="t2")
         # print(result)
         self.assertIn(result["status"], ["running", "finished"])
@@ -116,12 +116,11 @@ class TestJobsBlackBox(unittest.TestCase):
         jidc = "mflemwlg"
 
         res_a = self.jobs.run(
-            command="""echo "starting"; sleep 10; echo "done" """, job_id=jida
+            command=["bash", "-c", """echo "starting"; sleep 10; echo "done" """], job_id=jida
         )
         time.sleep(2)
         stdout_path, stderr_path = self.jobs.job_logs(job_id=jida)
         self.assertEqual(res_a["status"], "running")
-
         res_b = self.jobs.run(command="sleabkjep 1", job_id=jidb)
         self.assertEqual(res_b["status"], "failed_start")
 

@@ -45,7 +45,7 @@ class TestJobsBlackBox(unittest.TestCase):
     def test_run_to_finished(self):
         # 1. run a short shell command → expect “running” → then “finished”
         result = self.jobs.run(
-            command='echo "starting"; sleep 3; echo "done"', job_id="t1"
+            command=["bash", "-c", 'echo "starting"; sleep 3; echo "done"'], job_id="t1"
         )
         result = JobRecord(result)  # runtime type‐check
         self.assertEqual(result.self_id, "t1")
@@ -69,11 +69,13 @@ class TestJobsBlackBox(unittest.TestCase):
 
     def test_job_logs_capture(self):
         # 2. run a short Python command that writes to stdout and stderr
+        large_id = "fdbskgvbsdjkgbsdjkf"
         py = sys.executable
-        py_code = "\"import sys; print('hi'); sys.stderr.write('err\\n');\""
-        cmd = f"{py} -c {py_code}"
-        result = self.jobs.run(command=cmd, job_id="t2")
+        py_code = "import sys; print('hi'); sys.stderr.write('err\\n');"
+        cmd = [py, "-c", py_code]
+        result = self.jobs.run(command=cmd, job_id=large_id)
         result = JobRecord(result)  # runtime type‐check
+
         self.assertIn(
             result.status,
             (
@@ -83,18 +85,18 @@ class TestJobsBlackBox(unittest.TestCase):
         )
 
         # Wait for immediate finish
-        finished = self._wait_for_status("t2",
+        finished = self._wait_for_status(large_id,
                                          JobRecord.Status.c_finished,
                                          timeout=2.0)
         self.assertTrue(finished, "Job t2 did not finish in time")
 
         # Retrieve log contents
-        stdout_text, stderr_text = self.jobs.job_logs(job_id="t2")
+        stdout_text, stderr_text = self.jobs.job_logs(job_id=large_id)
         self.assertEqual(stdout_text.strip(), "hi")
         self.assertEqual(stderr_text.strip(), "err")
 
     def test_stop_long_running_job(self):
-        result = self.jobs.run(command="sleep 5",
+        result = self.jobs.run(command=["bash", "-c", "sleep 5"],
                                job_id="t3")
         result = JobRecord(result)  # runtime type‐check
         self.assertEqual(result.status, JobRecord.Status.c_running)
@@ -139,7 +141,7 @@ class TestJobsBlackBox(unittest.TestCase):
         jidb = "fdsgsdgsgsd"
         jidc = "hsfhfshfsfh"
         res_a = self.jobs.run(
-            command='echo "starting"; sleep 10; echo "done"', job_id=jida
+            command=["bash", "-c", 'echo "starting"; sleep 10; echo "done"'], job_id=jida
         )
         res_a = JobRecord(res_a)  # runtime type‐check
         time.sleep(0.2)  # let “a” actually enter “running”
@@ -201,3 +203,4 @@ class TestJobsBlackBox(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+    # unittest.main(defaultTest="TestJobsBlackBox.test_job_logs_capture")
