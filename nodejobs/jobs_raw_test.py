@@ -62,18 +62,23 @@ class TestJobsBlackBox(unittest.TestCase):
     def test_job_logs_capture(self):
         # 2. run a short Python command that writes to stdout and stderr
         py = sys.executable
+        large_id = "fdsknfdldsnj"
+        #py_code = "import sys; print('hi'); sys.stderr.write('err\\n');"
+        #cmd = [py, "-c", py_code]
+        #result = self.jobs.run(command=cmd, job_id="t2")
         py_code = "import sys; print('hi'); sys.stderr.write('err\\n');"
         cmd = [py, "-c", py_code]
-        result = self.jobs.run(command=cmd, job_id="t2")
+        result = self.jobs.run(command=cmd, job_id=large_id)
+        
         # print(result)
         self.assertIn(result["status"], ["running", "finished"])
 
         # Wait for immediate finish
-        finished = self._wait_for_status("t2", "finished", timeout=2.0)
-        self.assertTrue(finished, "Job t2 did not finish in time")
+        finished = self._wait_for_status(large_id, "finished", timeout=2.0)
+        self.assertTrue(finished, f"Job {large_id} did not finish in time")
 
         # Retrieve log paths
-        stdout, stderr = self.jobs.job_logs(job_id="t2")
+        stdout, stderr = self.jobs.job_logs(job_id=large_id)
         assert stdout.strip() == "hi"
         assert stderr.strip() == "err"
 
