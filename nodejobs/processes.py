@@ -60,7 +60,17 @@ class Processes:
         wrapper = os.path.join(os.path.dirname(__file__), "run_job.py")
         assert os.path.exists(wrapper), f"Cant find the run job kernel {wrapper}"
         cmd = [sys.executable, wrapper, "--job_id", job_id, "--json_path", spec_path]
-        print(' '.join(cmd))
+        #print(' '.join(cmd))
+
+        print("===== DEBUG RUN INFO =====")
+        print(" Job ID       :", job_id)
+        print(" Wrapper      :", wrapper, "exists?", os.path.exists(wrapper))
+        print(" Spec JSON    :", spec_path,    "exists?", os.path.exists(spec_path))
+        print(" Working dir  :", cwd,           "exists?", os.path.isdir(cwd))
+        print(" Log dir      :", logdir,        "exists?", os.path.isdir(logdir))
+        print(" Env vars     :", envs)
+        print(" Full command :", command)
+        print("===========================")             
         return cmd
 
     def run(
@@ -96,6 +106,7 @@ class Processes:
                             envs=envs,
                             logdir=logdir)
         print(f"running [{command}]")
+   
         process = subprocess.Popen(
             command,
             shell=False,
