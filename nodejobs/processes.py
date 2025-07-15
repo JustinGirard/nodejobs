@@ -58,7 +58,7 @@ class Processes:
             json.dump(spec, f)
 
         wrapper = os.path.join(os.path.dirname(__file__), "run_job.py")
-        assert os.path.exists(wrapper)
+        assert os.path.exists(wrapper), f"Cant find the run job kernel {wrapper}"
         cmd = [sys.executable, wrapper, "--job_id", job_id, "--json_path", spec_path]
         print(' '.join(cmd))
         return cmd
