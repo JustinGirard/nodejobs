@@ -63,13 +63,10 @@ class TestJobsBlackBox(unittest.TestCase):
         # 2. run a short Python command that writes to stdout and stderr
         py = sys.executable
         large_id = "fdsknfdldsnj"
-        #py_code = "import sys; print('hi'); sys.stderr.write('err\\n');"
-        #cmd = [py, "-c", py_code]
-        #result = self.jobs.run(command=cmd, job_id="t2")
         py_code = "import sys; print('hi'); sys.stderr.write('err\\n');"
         cmd = [py, "-c", py_code]
         result = self.jobs.run(command=cmd, job_id=large_id)
-        
+
         # print(result)
         self.assertIn(result["status"], ["running", "finished"])
 
@@ -83,7 +80,7 @@ class TestJobsBlackBox(unittest.TestCase):
         assert stderr.strip() == "err"
 
     def test_stop_long_running_job(self):
-        result = self.jobs.run(command=['bash','-c',"sleep 5"], job_id="t3")
+        result = self.jobs.run(command=['bash', '-c', "sleep 5"], job_id="t3")
         self.assertEqual(result["status"], "running")
         stop_res = self.jobs.stop(job_id="t3")
         self.assertIn(stop_res["status"], ("stopped", "finished"))
@@ -126,7 +123,7 @@ class TestJobsBlackBox(unittest.TestCase):
         time.sleep(2)
         stdout_path, stderr_path = self.jobs.job_logs(job_id=jida)
         self.assertEqual(res_a["status"], "running")
-        res_b = self.jobs.run(command=['bash','-c',"sleabkjep 1"], job_id=jidb)
+        res_b = self.jobs.run(command=['bash', '-c', "sleabkjep 1"], job_id=jidb)
         self.assertEqual(res_b["status"], "failed_start")
 
         # Job “c” - immediate finish
