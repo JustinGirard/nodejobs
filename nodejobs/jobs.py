@@ -21,7 +21,7 @@ class Jobs:
             default_dir = os.path.join(home, "tmp_decelium_job_database")
             os.makedirs(default_dir, exist_ok=True)
             self.db_path = default_dir
-            print(f"Jobs.__init__ ({e}). DB jobs working in {self.db_path }")
+            print(f"Jobs.__init__ ({e}). DB jobs working in {self.db_path}")
         self.jobdb = JobDB(self.db_path)
         self.processes = Processes(self.jobdb, verbose)
 
@@ -67,6 +67,7 @@ class Jobs:
         assert cond, "Invalid process detected"
         time.sleep(0.5)
         ret = start_proc.poll()
+        print(f"looking at pid {start_proc.pid}")
         if ret is None:
             result = JobRecord(
                 {
@@ -101,7 +102,6 @@ class Jobs:
         job: JobRecord = self.__find(job_id)
         if job is None:
             return None
-        # print(f"HEY --- {job}")
         job = JobRecord(job)
         job_id = job.self_id
         self.jobdb.update_status(
@@ -181,20 +181,18 @@ class Jobs:
         for proc in self.processes.list():
             proc: Process = proc
             if self.verbose is True:
-                print(f"...updating proc ... {proc}, as {proc.job_id } ")
+                print(f"...updating proc ... {proc}, as {proc.job_id} ")
             try:
                 os.waitpid(proc.pid, os.WNOHANG)
-            except:
+            except Exception as e:
+                e
                 pass
-            # Consume the Monkey patched job_id so
-            # we can find the right dictionary key to use.
             running_jobs[proc.job_id] = (
                 proc
             )
+        print(f"-- have running jobs {running_jobs} ")
         running_ids = list(running_jobs.keys())
         for actually_running_id in running_ids:
-            # print(f"...updating ... {actually_running_id}")
-
             self.jobdb.update_status(
                 JobRecord(
                     {
@@ -233,7 +231,7 @@ class Jobs:
                         JobRecord(
                             {
                                 JobRecord.self_id: job_id,
-                                JobRecord.status: JobRecord.Status.c_finished,
+                                JobRecord.status: JobRecord.Status.c_finished_2,
                             }
                         )
                     )

@@ -37,26 +37,27 @@ class TestJobsBlackBox(unittest.TestCase):
 
     def test_run_to_finished(self):
         # 1. run “sleep 1” job → expect “running” → then “finished”
+        job_id_test = "fbadfkadbkjfda"
         result = self.jobs.run(
-            command="""echo "starting"; sleep 3; echo "done" """, job_id="t1"
+            command="""echo "starting"; sleep 3; echo "done" """, job_id=job_id_test
         )
         # print(f"INITIAL RESULT {result} ")
-        self.assertEqual(result["self_id"], "t1")
+        self.assertEqual(result["self_id"], job_id_test)
         self.assertEqual(result["status"], "running")
         time.sleep(1)
         # print("\nLIST STATUS \n\n\n\n")
         all_jobs = self.jobs.list_status()
-        # print(f"ALL  JOBS {all_jobs} ")
-        self.assertIn("t1", all_jobs)
-        self.assertEqual(all_jobs["t1"]["status"], "running")
-        self.assertEqual(result["last_pid"], all_jobs["t1"]["last_pid"])
+        print(f"ALL  JOBS {all_jobs} ")
+        self.assertIn(job_id_test, all_jobs)
+        self.assertEqual(all_jobs[job_id_test]["status"], "running")
+        self.assertEqual(result["last_pid"], all_jobs[job_id_test]["last_pid"])
 
         # Wait up to 2 seconds for it to finish
-        finished = self._wait_for_status("t1", "finished", timeout=7.0)
-        status = self.jobs.get_status(job_id="t1")
+        finished = self._wait_for_status(job_id_test, "finished", timeout=7.0)
+        status = self.jobs.get_status(job_id=job_id_test)
         self.assertTrue(
             finished,
-            f"Job t1 did not transition to ‘finished’ in time {status}"
+            f"Job {job_id_test} did not transition to ‘finished’ in time {status}"
         )
 
     def test_job_logs_capture(self):
@@ -111,20 +112,24 @@ class TestJobsBlackBox(unittest.TestCase):
 
     def test_list_status_filtering(self):
         # Job “a” - short sleep
+        jida = "fnjdalncklxsa"
+        jidb = "fafmadsg"
+        jidc = "mflemwlg"
+
         res_a = self.jobs.run(
-            command="""echo "starting"; sleep 10; echo "done" """, job_id="a"
+            command="""echo "starting"; sleep 10; echo "done" """, job_id=jida
         )
         time.sleep(2)
-        stdout_path, stderr_path = self.jobs.job_logs(job_id="a")
+        stdout_path, stderr_path = self.jobs.job_logs(job_id=jida)
         self.assertEqual(res_a["status"], "running")
 
-        res_b = self.jobs.run(command="sleabkjep 1", job_id="b")
+        res_b = self.jobs.run(command="sleabkjep 1", job_id=jidb)
         self.assertEqual(res_b["status"], "failed_start")
 
         # Job “c” - immediate finish
         py = sys.executable
         cmd_c = f"{py} -c \"print('x')\""
-        res_c = self.jobs.run(command=cmd_c, job_id="c")
+        res_c = self.jobs.run(command=cmd_c, job_id=jidc)
         self.assertIn(res_c["status"], ["running", "finished"])
 
         # Give time for “b” and “c” to finish, but “a” should still be running
@@ -132,28 +137,27 @@ class TestJobsBlackBox(unittest.TestCase):
 
         # Now filter by running → only “b” should appear
         running_jobs = self.jobs.list_status(filter={"status": "running"})
-        self.assertIn("a", running_jobs)
-        self.assertNotIn("b", running_jobs)
-        self.assertNotIn("c", running_jobs)
+        self.assertIn(jida, running_jobs)
+        self.assertNotIn(jidb, running_jobs)
+        self.assertNotIn(jidc, running_jobs)
 
         # Filter by finished → “a” and “c” should appear
         finished_jobs = self.jobs.list_status(filter={"status": "finished"})
-        self.assertIn("c", finished_jobs)
-        self.assertNotIn("a", finished_jobs)
+        self.assertIn(jidc, finished_jobs)
+        self.assertNotIn(jida, finished_jobs)
         failed_jobs = self.jobs.list_status(filter={"status": "failed_start"})
-        self.assertIn("b", failed_jobs)
+        self.assertIn(jidb, failed_jobs)
 
         # Filter by dirname → single‐element dict
-        single_b = self.jobs.list_status(filter={"dirname": "b"})
+        single_b = self.jobs.list_status(filter={"dirname": jidb})
         self.assertEqual(len(single_b), 1)
-        self.assertIn("b", single_b)
+        self.assertIn(jidb, single_b)
 
         # Finally wait for “b” to finish and confirm it moves to finished
-        finished_b = self._wait_for_status("a", "finished", timeout=10.0)
+        finished_b = self._wait_for_status(jida, "finished", timeout=10.0)
 
         self.assertTrue(finished_b, "Job a did not finish in time")
 
 
 if __name__ == "__main__":
     unittest.main()
-    # unittest.main(defaultTest="TestJobsBlackBox.test_stop_long_running_job")

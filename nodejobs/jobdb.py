@@ -13,10 +13,15 @@ class JobRecordDict(BaseData):
         return required, optional
 
 
+def now_dt():
+    dt = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
+    return dt
+
+
 class JobRecord(BaseData):
     self_id: str
     status: str
-    last_update: (datetime.datetime, datetime.datetime.utcnow())
+    last_update: (datetime.datetime, now_dt())
     last_pid: (int, None)
     dirname: (str, None)
     cwd: (str, None)
@@ -29,13 +34,14 @@ class JobRecord(BaseData):
         c_starting = "starting"
         c_running = "running"
         c_failed = "failed"
-        c_finished = "finished"
+        c_finished = "finished"  # Every end condition has its own trigger.
+        c_finished_2 = "finished"  # By using 2 vars, we can debug which
         c_failed_start = "failed_start"
         c_failed_stop = "failed_start"
 
     def __init__(self, in_dict, trim=False):
         if JobRecord.last_update not in in_dict:
-            in_dict[JobRecord.last_update] = datetime.datetime.utcnow()
+            in_dict[JobRecord.last_update] = now_dt()
         super().__init__(in_dict, trim)
 
 
@@ -99,7 +105,6 @@ class JobDB:
               (often the new record’s ID or a status code).
         """
         clean_job = JobRecord(job).clean()
-        print("UPDATING STATUS "+ str(clean_job))
         resp = self.jobdb.execute(
             qtype="upsert",
             source="process_status",

@@ -2,16 +2,15 @@ import subprocess
 import psutil
 import threading
 import os
-from typing import Dict, List
+from typing import Dict
 import time
-from nodejobs.jobdb import JobDB, JobFilter, JobRecord
+import sys
+import json
 
 
 class Processes:
-    def __init__(self, job_db, verbose=False):
+    def __init__(self, job_db=None, verbose=False):
         self.verbose = verbose
-        assert isinstance(job_db, JobDB)
-        self.jobdb = job_db
         self._processes: Dict[str, subprocess.Popen] = {}
         threading.Thread(target=self._reap_loop, daemon=True).start()
 
@@ -32,6 +31,37 @@ class Processes:
 
             time.sleep(1)
 
+    def build_run_job_command(
+            self,
+            job_id: str,
+            command: str,
+            cwd: str = None,
+            envs: dict = None,
+            logdir: str = ".") -> list:
+        """
+        Service function for tests: writes a {job_id}.json spec into logdir
+        and returns the list of arguments to invoke run_job.py.
+        """
+        if envs is None:
+            envs = {}
+        # envs["JOB_ID"] = job_id
+
+        os.makedirs(logdir, exist_ok=True)
+        spec = {
+            "command": command,
+            "cwd": cwd,
+            "job_id": job_id,
+            "envs": envs
+        }
+        spec_path = os.path.join(logdir, f"{job_id}.json")
+        with open(spec_path, "w") as f:
+            json.dump(spec, f)
+
+        wrapper = os.path.join(os.path.dirname(__file__), "run_job.py")
+        cmd = [sys.executable, wrapper, "--job_id", job_id, "--json_path", spec_path]
+        print(' '.join(cmd))
+        return cmd
+
     def run(
         self,
         command: str,
@@ -47,7 +77,6 @@ class Processes:
         ), "Job id is too short. It should be long enough to be unique"
         if envs is None:
             envs = {}
-        envs["JOB_ID"] = job_id
 
         os.makedirs(logdir, exist_ok=True)
         out_path = f"{logdir}/{logfile}_out.txt"
@@ -59,9 +88,16 @@ class Processes:
         out_f = open(out_path, "a")
         err_f = open(err_path, "a")
 
+        command = self.build_run_job_command(
+                            job_id=job_id,
+                            command=command,
+                            cwd=cwd,
+                            envs=envs,
+                            logdir=logdir)
+        print(f"running [{command}]")
         process = subprocess.Popen(
             command,
-            shell=True,
+            shell=False,
             cwd=cwd,
             env=envs,
             stdout=out_f,
@@ -79,54 +115,53 @@ class Processes:
         return process
 
     def find(self, job_id):
-        filter = JobFilter({JobFilter.self_id: job_id})
-        jobs: Dict[str, JobRecord] = self.jobdb.list_status(filter=filter)
-        if len(jobs) == 0 or job_id not in list(jobs.keys()):
-            print(f"Process.find found no job record for {job_id}")
-            return None
-
-        job = JobRecord(jobs[job_id])
-        try:
-            assert (
-                JobRecord.last_pid in job and job.last_pid is not None
-            ), f"Found a job with a missing pid {job}"
-        except Exception:
-            print(f"Found a job with a missing pid: {job}")
-            return None
-        for proc in psutil.process_iter(["pid", "name", "environ"]):
-            if proc.pid == job.last_pid:
+        for proc in psutil.process_iter(["pid", "cmdline"]):
+            cmdline = proc.info.get("cmdline") or []
+            if job_id in cmdline:
                 return proc
+
         return None
 
     def stop(self, job_id):
-        for i in [1, 2]:
-            proc = self.find(job_id)
-            if proc:
-                if self.verbose is True:
-                    print(" --- stopping ", proc)
-                proc.terminate()
-                proc.wait()
-            else:
-                if self.verbose is True:
-                    print(" --- NOT stopping ", job_id)
+        proc = self.find(job_id)
+        if not proc:
+            return False
 
+        # 1) kill descendants first
+        children = proc.children(recursive=True)
+        for c in children:
+            c.terminate()
+        gone, alive = psutil.wait_procs(children, timeout=1)
+        for c in alive:
+            c.kill()
+
+        # 2) kill the wrapper itself
+        proc.terminate()
+        proc.wait(timeout=1)
         return True
 
-    def list(self):
-        filter = JobFilter({})
-        jobs: Dict[str, JobRecord] = self.jobdb.list_status(filter=filter)
-        jobs_list: List[JobRecord] = list(jobs.values())
-        pid_jobs: Dict[int, JobRecord] = {}
-        for j in jobs_list:
-            j = JobRecord(j)
-            pid_jobs[j.last_pid] = j
-        procs = []
-        for proc in psutil.process_iter(["pid", "name", "environ"]):
-            if proc.info["pid"] in list(pid_jobs.keys()):
-                pid = proc.info["pid"]
-                proc.job_id = pid_jobs[pid][
-                    JobRecord.self_id
-                ]
-                procs.append(proc)
+    # def list(self):
+    #     procs = []
+    #     for proc in psutil.process_iter(['pid', 'cmdline']):
+    #         try:
+    #             cmd = ' '.join(proc.info.get('cmdline') or [])
+    #             if 'run_job.py' in cmd:
+    #                 procs.append(proc)
+    #         except (psutil.NoSuchProcess, psutil.AccessDenied):
+    #             continue
+    #     return procs
 
+    def list(self):
+        procs = []
+        for proc in psutil.process_iter(['pid', 'cmdline']):
+            try:
+                parts = proc.info.get('cmdline') or []
+                whole_cmd = ' '.join(parts)
+                if 'run_job.py' in whole_cmd and '--job_id' in parts:
+                    idx = parts.index('--job_id')
+                    if idx + 1 < len(parts):
+                        proc.job_id = parts[idx + 1]
+                        procs.append(proc)
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
         return procs

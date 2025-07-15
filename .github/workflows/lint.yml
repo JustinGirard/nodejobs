@@ -25,4 +25,4 @@ jobs:
         run: pip install flake8
 
       - name: Run flake8 on nodejobs
-        run: flake8 nodejobs --exclude dependencies
+        run: flake8 nodejobs --exclude dependencies  --max-line-length=120

@@ -135,23 +135,26 @@ class TestJobsBlackBox(unittest.TestCase):
 
     def test_list_status_filtering(self):
         # Job “a” - long sleep (will remain running)
+        jida = "gdnsbjkdfankl"
+        jidb = "fdsgsdgsgsd"
+        jidc = "hsfhfshfsfh"
         res_a = self.jobs.run(
-            command='echo "starting"; sleep 10; echo "done"', job_id="a"
+            command='echo "starting"; sleep 10; echo "done"', job_id=jida
         )
         res_a = JobRecord(res_a)  # runtime type‐check
         time.sleep(0.2)  # let “a” actually enter “running”
-        rec_a = JobRecord(self.jobs.list_status()["a"])
+        rec_a = JobRecord(self.jobs.list_status()[jida])
         self.assertEqual(rec_a.status, JobRecord.Status.c_running)
 
         # Job “b” - invalid command → should fail_start
-        res_b = self.jobs.run(command="sleabkjep 1", job_id="b")
+        res_b = self.jobs.run(command="sleabkjep 1", job_id=jidb)
         res_b = JobRecord(res_b)
         self.assertEqual(res_b.status, JobRecord.Status.c_failed_start)
 
         # Job “c” - immediate finish
         py = sys.executable
         cmd_c = f"{py} -c \"print('x')\""
-        res_c = self.jobs.run(command=cmd_c, job_id="c")
+        res_c = self.jobs.run(command=cmd_c, job_id=jidc)
         res_c = JobRecord(res_c)
         self.assertIn(
             res_c.status,
@@ -168,30 +171,30 @@ class TestJobsBlackBox(unittest.TestCase):
         running_jobs = self.jobs.list_status(
             filter={JobRecord.status: JobRecord.Status.c_running}
         )
-        self.assertIn("a", running_jobs)
-        self.assertNotIn("b", running_jobs)
-        self.assertNotIn("c", running_jobs)
+        self.assertIn(jida, running_jobs)
+        self.assertNotIn(jidb, running_jobs)
+        self.assertNotIn(jidc, running_jobs)
 
         finished_jobs = self.jobs.list_status(
             filter={JobRecord.status: JobRecord.Status.c_finished}
         )
-        self.assertIn("c", finished_jobs)
-        self.assertNotIn("a", finished_jobs)
+        self.assertIn(jidc, finished_jobs)
+        self.assertNotIn(jida, finished_jobs)
 
         # Filter by failed_start → only “b” should appear
         failed_jobs = self.jobs.list_status(
             filter={JobRecord.status: JobRecord.Status.c_failed_start}
         )
-        self.assertIn("b", failed_jobs)
+        self.assertIn(jidb, failed_jobs)
 
         # Filter by dirname → single‐element dict
-        single_b = self.jobs.list_status(filter={JobRecord.dirname: "b"})
+        single_b = self.jobs.list_status(filter={JobRecord.dirname: jidb})
         self.assertEqual(len(single_b), 1)
-        self.assertIn("b", single_b)
+        self.assertIn(jidb, single_b)
 
         # Finally wait for “a” to finish on its own (timeout 10 seconds)
         finished_a = self._wait_for_status(
-            "a", JobRecord.Status.c_finished, timeout=10.0
+            jida, JobRecord.Status.c_finished, timeout=10.0
         )
         self.assertTrue(finished_a, "Job a did not finish in time")
 
