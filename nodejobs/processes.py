@@ -95,7 +95,7 @@ class Processes:
                             cwd=cwd,
                             envs=envs,
                             logdir=logdir)
-        # print(f"running [{command}]")
+        print(f"running [{command}]")
         process = subprocess.Popen(
             command,
             shell=False,
