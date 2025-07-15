@@ -95,7 +95,7 @@ class Processes:
                             cwd=cwd,
                             envs=envs,
                             logdir=logdir)
-        print(f"running [{command}]")
+        # print(f"running [{command}]")
         process = subprocess.Popen(
             command,
             shell=False,
@@ -137,8 +137,11 @@ class Processes:
             c.kill()
 
         # 2) kill the wrapper itself
-        proc.terminate()
-        proc.wait(timeout=1)
+        try:
+            proc.terminate()
+            proc.wait(timeout=1)
+        except Exception as e:
+            e
         return True
 
     # def list(self):

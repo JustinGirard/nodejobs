@@ -7,7 +7,8 @@ import sys
 import psutil
 import unittest
 from nodejobs.run_job import RunningProcessSpec
-import nodejobs 
+import nodejobs
+
 
 class TestRunJobMonolithic(unittest.TestCase):
     def test_run_job_lifecycle(self):

@@ -67,7 +67,7 @@ class Jobs:
         assert cond, "Invalid process detected"
         time.sleep(0.5)
         ret = start_proc.poll()
-        print(f"looking at pid {start_proc.pid}")
+        # print(f"looking at pid {start_proc.pid}")
         if ret is None:
             result = JobRecord(
                 {
