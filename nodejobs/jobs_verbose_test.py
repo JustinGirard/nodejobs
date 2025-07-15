@@ -149,13 +149,13 @@ class TestJobsBlackBox(unittest.TestCase):
         self.assertEqual(rec_a.status, JobRecord.Status.c_running)
 
         # Job “b” - invalid command → should fail_start
-        res_b = self.jobs.run(command="sleabkjep 1", job_id=jidb)
+        res_b = self.jobs.run(command=["bash","-c","sleabkjep 1"], job_id=jidb)
         res_b = JobRecord(res_b)
         self.assertEqual(res_b.status, JobRecord.Status.c_failed_start)
 
         # Job “c” - immediate finish
         py = sys.executable
-        cmd_c = f"{py} -c \"print('x')\""
+        cmd_c = [py,"-c" "\"print('x')\""]
         res_c = self.jobs.run(command=cmd_c, job_id=jidc)
         res_c = JobRecord(res_c)
         self.assertIn(

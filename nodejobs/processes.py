@@ -38,7 +38,7 @@ class Processes:
             cwd: str = None,
             envs: dict = None,
             logdir: str = ".") -> list:
-        assert command is list, f"Only support list based commands re: {command}. Please adopt a list of strings"
+        assert type(command) is list, f"Only support list based commands re: {command}. Please adopt a list of strings"
         """
         Service function for tests: writes a {job_id}.json spec into logdir
         and returns the list of arguments to invoke run_job.py.
