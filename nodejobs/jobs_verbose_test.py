@@ -96,7 +96,7 @@ class TestJobsBlackBox(unittest.TestCase):
         self.assertEqual(stderr_text.strip(), "err")
 
     def test_stop_long_running_job(self):
-        result = self.jobs.run(command=["bash", "-c", "sleep 5"],
+        result = self.jobs.run(command=["bash", "-c", "sleep 500"],
                                job_id="t3")
         result = JobRecord(result)  # runtime type‐check
         self.assertEqual(result.status, JobRecord.Status.c_running)
@@ -202,5 +202,5 @@ class TestJobsBlackBox(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
-    # unittest.main(defaultTest="TestJobsBlackBox.test_job_logs_capture")
+    # unittest.main()
+    unittest.main(defaultTest="TestJobsBlackBox.test_stop_long_running_job")

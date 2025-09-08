@@ -163,8 +163,6 @@ class BaseService():
         return value    
     @classmethod
     def run_cli(cls):
-        print("CLI")
-        return
         """This method parses CLI arguments, converts them to kwargs, and passes them to run."""
         # Create a parser that accepts positional arguments
         parser = argparse.ArgumentParser(description="Generic service CLI for any BaseService subclass.")
@@ -199,9 +197,8 @@ class BaseService():
         #print(cls)
 
         kwargs = cls.add_depth(kwargs)
-        print("ADD DEPPTHU DEBUG")
-        print(json.dumps(kwargs, indent = 4))
-        #kwargs = cls.add_depth(kwargs)
+        #print(json.dumps(kwargs, indent = 4))
+        kwargs = cls.add_depth(kwargs)
         #print("Debug json:"+json.dumps(kwargs, indent = 4))
         #return
         result = cls.run(**kwargs)
@@ -282,9 +279,7 @@ class BaseService():
             # Always quote the key.
             formatted_key = f'"{key}"'
             # Format the value: quote it if it's a string.
-            if isinstance(value, bool):
-                formatted_value = "True" if value else "False"            
-            elif isinstance(value, str):
+            if isinstance(value, str):
                 formatted_value = f'"{value}"'
             else:
                 formatted_value = str(value)
@@ -327,7 +322,7 @@ class BaseService():
         nested = {}
         for flat_key, value in flat.items():
             if isinstance(value, str) and value.lower() in ("true", "false"):
-                value = True if value.lower() == "true" else False            
+                value = True if value.lower() == "true" else False                 
             keys = flat_key.split(sep)
             is_root_index = keys[0].isdigit()
             if is_root_index:
@@ -454,83 +449,3 @@ class BaseService():
         name = cls.__name__
         ext = ".exe" if (platform or sys.platform).startswith("win") else ""
         return f"{name}{ext}"
-
-
-    #@classmethod
-    #def __init_subclass__(cls, **kwargs):
-    #    """This method is automatically called when a subclass is created."""
-    #    super().__init_subclass__(**kwargs)
-    #    #print("INIT SUBCLASS")
-    #    #print(sys.modules['__main__'].__file__)
-    #    #print(sys.argv[0])
-    #    ## Automatically run the CLI when the subclass is executed as the main module
-    #    #if sys.argv[0] in sys.modules['__main__'].__file__:
-    #    #    
-    #    #    cls.run_cli()
-
-
-
-
-
-
-'''
-#
-# INHERIT METHOD ONE - CLOBBER THE RUN COMMAND
-#
-class HelloCommand(BaseService):
-    @classmethod
-    def run(cls, **kwargs):
-        print(f"MyService running with arguments: {kwargs}")
-        return 0  # Success exit code
-
-# To test the base class and the run_cli functionality:
-if __name__ == "__main__":
-    HelloCommand.run_cli()
-'''
-
-'''
-#
-# INHERIT METHOD TWO - Register named services
-#
-# This second method allows users to use get_command_map() to return a 
-#
-class HelloCommand(BaseService):
-    @classmethod
-    def get_command_map(cls):
-        command_map = {
-            'example': {
-                'required_args': [],
-                'method': cls.example,
-            },
-            'example_req': {
-                'required_args': ['arg1','arg2'],
-                'method': cls.example_req,
-            },
-
-        }
-        return command_map
-
-    @classmethod
-    def example(cls,**kargs):
-        # Interface for times when persitance allows the command to keep some internal state in self
-        import pprint
-        print("The Args")
-        pprint.pprint(kargs)
-        return 1
-    @classmethod
-    def example_req(cls,arg1,arg2):
-        # Interface for times when persitance allows the command to keep some internal state in self
-        import pprint
-        pprint.pprint(arg1)
-        pprint.pprint(arg2)
-        return 1
-
-# To test the base class and the run_cli functionality:
-if __name__ == "__main__":
-    HelloCommand.run_cli()
-# python3 BaseService.py example hello=1
-# python3 BaseService.py example_req arg1=1 arg2=1 
-'''
-
-#if __name__ == "__main__":
-#    BaseService.run_cli()

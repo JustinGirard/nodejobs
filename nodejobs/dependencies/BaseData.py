@@ -259,7 +259,7 @@ class BaseData(dict, metaclass=BaseDataMeta):
             elif (expected_type == Any):
                 pass # Allowed to be empty default value
             else:
-                raise TypeError(f"do_validation did not pass for {type(self)} {key}:{expected_type} , {value} -- Are you forgetting {key}{init_dict}")
+                raise TypeError(f"do_validation did not pass for {type(self)} key:{key}: type:{expected_type} , invalid_value: {value} ... {key}current_data: {init_dict}")
         if isinstance(expected_type, type) and (issubclass(expected_type, BaseData)):
             pass # Already passed deep validation above ^. below is for raw data
         elif (expected_type != Any and not isinstance(expected_type, FunctionType)):

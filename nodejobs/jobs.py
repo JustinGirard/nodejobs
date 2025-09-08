@@ -36,7 +36,6 @@ class Jobs:
         return job
 
     def run(self, command: Union[str, List[str]], job_id: str, cwd: str = None):
-        print(f"a.RUNNING {command}")
 
         assert len(job_id) > 0, " Job name too short"
         if cwd is None:
@@ -61,7 +60,6 @@ class Jobs:
         if command is str:
             command = command.strip()
             command = command.split(' ')
-        print(f"RUNNING {command}")
         start_proc: subprocess.Popen = self.processes.run(
             command=command,
             job_id=job_id,
@@ -132,12 +130,12 @@ class Jobs:
         job = found_job[job_id]
         if JobRecord(found_job[job_id]).status == JobRecord.Status.c_running:
             if self.verbose is True:
-                print(f"inspecting job (A): {job}")
+                print(f"inspecting job (A): {job} -- {job_id}")
             result = JobRecord(
                 {
-                    job.last_pid: job.last_pid,
-                    job.self_id: job_id,
-                    job.status: job.Status.c_failed_stop,
+                    JobRecord.last_pid: job.last_pid,
+                    JobRecord.self_id: job_id, 
+                    JobRecord.status: job.Status.c_failed_stop,
                 }
             )
 
@@ -197,6 +195,9 @@ class Jobs:
                 proc
             )
         running_ids = list(running_jobs.keys())
+        if self.verbose is True:
+            print(f"...updating ... running_ids {running_ids}")
+
         for actually_running_id in running_ids:
             self.jobdb.update_status(
                 JobRecord(
@@ -214,7 +215,9 @@ class Jobs:
             JobFilter({JobRecord.status: JobRecord.Status.c_stopping})
         )
         db_review_dict = {**db_runningdict, **db_stopping_dict}
-        # print(db_running_list)
+        if self.verbose is True:
+            print(f"...updating ... db_running_list {running_ids}")
+
         for job_id in db_review_dict.keys():
             if self.verbose is True:
                 print(f"...reviewing {job_id}")
@@ -223,14 +226,18 @@ class Jobs:
                 # print(f"RETIRING {job_id}")
                 stdlog, errlog = self.jobdb.job_logs(self_id=job_id)
                 if len(errlog.strip()) > 0:
-                    self.jobdb.update_status(
-                        JobRecord(
-                            {
-                                JobRecord.self_id: job_id,
-                                JobRecord.status: JobRecord.Status.c_failed,
-                            }
+                    if self.verbose is True:
+                        print(f"...recording failed: \nstdlog{stdlog}:\n\nerrlog{errlog}")
+                    update_status =  JobRecord.Status.c_failed
+                    if job_id in db_stopping_dict:
+                        self.jobdb.update_status(
+                            JobRecord(
+                                {
+                                    JobRecord.self_id: job_id,
+                                    JobRecord.status: JobRecord.Status.c_stopped,
+                                }
+                            )
                         )
-                    )
                 else:
                     self.jobdb.update_status(
                         JobRecord(
