@@ -134,7 +134,7 @@ class Jobs:
             result = JobRecord(
                 {
                     JobRecord.last_pid: job.last_pid,
-                    JobRecord.self_id: job_id, 
+                    JobRecord.self_id: job_id,
                     JobRecord.status: job.Status.c_failed_stop,
                 }
             )
@@ -228,7 +228,6 @@ class Jobs:
                 if len(errlog.strip()) > 0:
                     if self.verbose is True:
                         print(f"...recording failed: \nstdlog{stdlog}:\n\nerrlog{errlog}")
-                    update_status =  JobRecord.Status.c_failed
                     if job_id in db_stopping_dict:
                         self.jobdb.update_status(
                             JobRecord(

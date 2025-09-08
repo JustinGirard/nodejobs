@@ -202,5 +202,5 @@ class TestJobsBlackBox(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    # unittest.main()
-    unittest.main(defaultTest="TestJobsBlackBox.test_stop_long_running_job")
+    unittest.main()
+    # unittest.main(defaultTest="TestJobsBlackBox.test_stop_long_running_job")
