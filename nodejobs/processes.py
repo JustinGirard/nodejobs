@@ -55,7 +55,8 @@ class Processes:
             "job_id": job_id,
             "envs": envs
         }
-        spec_path = os.path.join(logdir, f"{job_id}.json")
+        #spec_path = os.path.join(logdir, f"{job_id}.json")
+        spec_path = os.path.abspath(os.path.join(logdir, f"{job_id}.json"))
         with open(spec_path, "w") as f:
             json.dump(spec, f)
 
@@ -111,7 +112,7 @@ class Processes:
             command,
             shell=False,
             cwd=cwd,
-            env=envs,
+            env={**os.environ, **(envs or {})}, 
             stdout=out_f,
             stderr=err_f,
             preexec_fn=os.setsid,

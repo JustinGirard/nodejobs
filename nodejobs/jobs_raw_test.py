@@ -158,6 +158,42 @@ class TestJobsBlackBox(unittest.TestCase):
 
         self.assertTrue(finished_b, "Job a did not finish in time")
 
+    def test_start_and_stop_npm_run_start(self):
+        npm_project_dir = "/Users/computercomputer/justinops/projects/portfolio"  # TODO: set this
+        job_id = "npm_run_start_test"
+
+        import os
+
+        npm_bin = "/Users/computercomputer/.nvm/versions/node/v20.11.1/bin"
+
+        envs = {**os.environ}
+        envs["PATH"] = f"{npm_bin}:" + envs.get("PATH", "")
+
+
+        result = self.jobs.run(
+            command=["npm", "run", "start"],
+            job_id=job_id,
+            cwd=npm_project_dir,
+            envs=envs
+        )
+
+        self.assertEqual(result["self_id"], job_id)
+        self.assertEqual(result["status"], "running")
+
+        # Let the dev server spin up a bit
+        time.sleep(5)
+
+        stop_res = self.jobs.stop(job_id=job_id)
+        self.assertIsNotNone(stop_res)
+        self.assertIn(stop_res["status"], ("stopped", "finished"))
+
+        all_jobs = self.jobs.list_status()
+        self.assertIn(job_id, all_jobs)
+        self.assertNotEqual(all_jobs[job_id]["status"], "running")
 
 if __name__ == "__main__":
-    unittest.main()
+    #unittest.main()
+    unittest.main(defaultTest="TestJobsBlackBox.test_start_and_stop_npm_run_start")
+    #unittest.main(defaultTest="TestJobsBlackBox.test_run_to_finished")
+
+    

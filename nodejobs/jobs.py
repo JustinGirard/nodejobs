@@ -6,6 +6,10 @@ import time
 from psutil import Process
 from typing import Tuple, Union, List
 import subprocess
+import json
+import datetime as _dt
+from typing import Iterator, Optional, Dict
+from nodejobs.dependencies.BaseData import BaseData
 
 
 class Jobs:
@@ -21,9 +25,33 @@ class Jobs:
             default_dir = os.path.join(home, "tmp_decelium_job_database")
             os.makedirs(default_dir, exist_ok=True)
             self.db_path = default_dir
-            print(f"Jobs.__init__ ({e}). DB jobs working in {self.db_path}")
+            #print(f"Jobs.__init__ ({e}). DB jobs working in {self.db_path}")
         self.jobdb = JobDB(self.db_path)
         self.processes = Processes(self.jobdb, verbose)
+
+    # === Streaming helpers (SSE + event model) ===
+    class StreamEvent(BaseData):
+        type: str
+        job_id: str
+        text: (str, None)
+        status: (str, None)
+        seq: int
+        ts: str
+
+    def _now_iso(self) -> str:
+        return _dt.datetime.utcnow().isoformat(timespec="seconds") + "Z"
+
+    def _sse_frame(self, event_type: str, data: 'Jobs.StreamEvent', event_id: int) -> str:
+        payload = json.dumps(data.to_safe_dict(), ensure_ascii=True, separators=(",", ":"))
+        lines = []
+        if event_id is not None:
+            lines.append(f"id: {event_id}")
+        if event_type:
+            lines.append(f"event: {event_type}")
+        for ln in payload.splitlines() or [""]:
+            lines.append(f"data: {ln}")
+        lines.append("")
+        return "\n".join(lines) + "\n"
 
     def __find(self, job_id: str):
         assert job_id is not None, "can only select by job_id"
@@ -35,7 +63,18 @@ class Jobs:
             job = list(jobs.values())[0]
         return job
 
-    def run(self, command: Union[str, List[str]], job_id: str, cwd: str = None):
+    def __log_paths(self, job_id: str) -> Tuple[str, str]:
+        job = self.__find(job_id)
+        if job is None:
+            raise ValueError(f"Unknown job_id '{job_id}'")
+        rec = JobRecord(job)
+        if not rec.logdir or not rec.logfile:
+            raise ValueError(f"Job '{job_id}' has no logdir/logfile recorded yet")
+        std = os.path.join(rec.logdir, f"{rec.logfile}_out.txt")
+        err = os.path.join(rec.logdir, f"{rec.logfile}_errors.txt")
+        return std, err
+
+    def run(self, command: Union[str, List[str]], job_id: str, cwd: str = None,envs: dict = None):
 
         assert len(job_id) > 0, " Job name too short"
         if cwd is None:
@@ -65,7 +104,8 @@ class Jobs:
             job_id=job_id,
             cwd=cwd,
             logdir=logdir,
-            logfile=logfile
+            logfile=logfile,
+            envs = envs
         )
         cond = isinstance(start_proc, subprocess.Popen)
         assert cond, "Invalid process detected"
@@ -271,3 +311,172 @@ class Jobs:
 
         # Return the first JobRecord in that dict
         return next(iter(recs.values()))
+
+    # === Public Streaming APIs ===
+    def bind(
+        self,
+        job_id: str,
+        include: Tuple[str, ...] = ("stdout", "stderr"),
+        from_beginning: bool = False,
+        poll_interval: float = 0.25,
+        heartbeat_interval: float = 5.0,
+        last_event_id: Optional[int] = None,
+    ) -> Iterator['Jobs.StreamEvent']:
+        out_path, err_path = self.__log_paths(job_id)
+        want_out = "stdout" in include
+        want_err = "stderr" in include
+
+        deadline = time.time() + 5.0
+        out_f = err_f = None
+        while True:
+            try:
+                if want_out and out_f is None and os.path.exists(out_path):
+                    out_f = open(out_path, "rb")
+                    out_f.seek(0, os.SEEK_SET if from_beginning else os.SEEK_END)
+                if want_err and err_f is None and os.path.exists(err_path):
+                    err_f = open(err_path, "rb")
+                    err_f.seek(0, os.SEEK_SET if from_beginning else os.SEEK_END)
+                if ((not want_out) or out_f is not None) and ((not want_err) or err_f is not None):
+                    break
+            except Exception:
+                pass
+            if time.time() > deadline:
+                raise FileNotFoundError(f"Log files not ready for job '{job_id}'")
+            time.sleep(0.05)
+
+        if isinstance(last_event_id, int):
+            seq = last_event_id
+        elif isinstance(last_event_id, str) and last_event_id.isdigit():
+            seq = int(last_event_id)
+        else:
+            seq = 0
+
+        status_rec = self.get_status(job_id)
+        init_status = status_rec.status if status_rec else "unknown"
+        seq += 1
+        yield Jobs.StreamEvent({
+            Jobs.StreamEvent.type: "status",
+            Jobs.StreamEvent.job_id: job_id,
+            Jobs.StreamEvent.status: init_status,
+            Jobs.StreamEvent.seq: seq,
+            Jobs.StreamEvent.ts: self._now_iso(),
+        })
+
+        terminal = {
+            JobRecord.Status.c_stopped,
+            JobRecord.Status.c_finished,
+            JobRecord.Status.c_finished_2,
+            JobRecord.Status.c_failed,
+            JobRecord.Status.c_failed_start,
+        }
+
+        last_heartbeat = time.time()
+
+        try:
+            while True:
+                emitted = False
+
+                if want_out and out_f is not None:
+                    data = out_f.read()
+                    if data:
+                        emitted = True
+                        seq += 1
+                        yield Jobs.StreamEvent({
+                            Jobs.StreamEvent.type: "stdout",
+                            Jobs.StreamEvent.job_id: job_id,
+                            Jobs.StreamEvent.text: data.decode("utf-8", errors="replace"),
+                            Jobs.StreamEvent.seq: seq,
+                            Jobs.StreamEvent.ts: self._now_iso(),
+                        })
+
+                if want_err and err_f is not None:
+                    data = err_f.read()
+                    if data:
+                        emitted = True
+                        seq += 1
+                        yield Jobs.StreamEvent({
+                            Jobs.StreamEvent.type: "stderr",
+                            Jobs.StreamEvent.job_id: job_id,
+                            Jobs.StreamEvent.text: data.decode("utf-8", errors="replace"),
+                            Jobs.StreamEvent.seq: seq,
+                            Jobs.StreamEvent.ts: self._now_iso(),
+                        })
+
+                now = time.time()
+                if (now - last_heartbeat) >= heartbeat_interval:
+                    seq += 1
+                    yield Jobs.StreamEvent({
+                        Jobs.StreamEvent.type: "heartbeat",
+                        Jobs.StreamEvent.job_id: job_id,
+                        Jobs.StreamEvent.seq: seq,
+                        Jobs.StreamEvent.ts: self._now_iso(),
+                    })
+                    last_heartbeat = now
+
+                rec = self.get_status(job_id)
+                is_terminal = (rec and rec.status in terminal)
+                if is_terminal and not emitted:
+                    seq += 1
+                    yield Jobs.StreamEvent({
+                        Jobs.StreamEvent.type: "status",
+                        Jobs.StreamEvent.job_id: job_id,
+                        Jobs.StreamEvent.status: rec.status,
+                        Jobs.StreamEvent.seq: seq,
+                        Jobs.StreamEvent.ts: self._now_iso(),
+                    })
+                    break
+
+                time.sleep(poll_interval)
+        finally:
+            try:
+                if out_f:
+                    out_f.close()
+            finally:
+                if err_f:
+                    err_f.close()
+
+    def sse(
+        self,
+        job_id: str,
+        include: Tuple[str, ...] = ("stdout", "stderr"),
+        from_beginning: bool = False,
+        poll_interval: float = 0.25,
+        heartbeat_interval: float = 5.0,
+        last_event_id: Optional[str] = None,
+    ) -> Iterator[str]:
+        parsed = None
+        if isinstance(last_event_id, int):
+            parsed = last_event_id
+        elif isinstance(last_event_id, str) and last_event_id.strip().isdigit():
+            parsed = int(last_event_id.strip())
+
+        for ev in self.bind(
+            job_id=job_id,
+            include=include,
+            from_beginning=from_beginning,
+            poll_interval=poll_interval,
+            heartbeat_interval=heartbeat_interval,
+            last_event_id=parsed,
+        ):
+            ev_type = ev.type or "message"
+            ev_id = ev.seq
+            yield self._sse_frame(ev_type, ev, ev_id)
+
+    @staticmethod
+    def subscribe_sse(url: str, session=None, **requests_kwargs):
+        try:
+            import requests
+            from sseclient import SSEClient  # type: ignore
+        except Exception:
+            raise ImportError("[stream] events stream error: sseclient-py is required for event streaming")
+        if session is None:
+            session = requests.Session()
+        resp = session.get(
+            url,
+            stream=True,
+            headers={"Accept": "text/event-stream"},
+            **requests_kwargs,
+        )
+        resp.raise_for_status()
+        client = SSEClient(resp)
+        return client.events()
