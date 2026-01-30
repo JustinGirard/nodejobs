@@ -24,20 +24,36 @@ python -m pip install nodejobs
 
 ### Use
 ```python
+import sys
 from nodejobs import Jobs, JobRecord
 
 # Create a Jobs manager with a specified database path
 jobs_manager = Jobs(db_path="/path/to/job_db/dir")
 
 # Starts your job -- its status is returned as job_record
-job_record = jobs_manager.run(command="python script.py", job_id="job_001")
+# Tip: use unbuffered Python (-u) for real-time streaming
+job_record = jobs_manager.run(command=[sys.executable, "-u", "script.py"], job_id="job_001")
+
+# Stream live output (optional). Yields stdout/stderr/status/heartbeat events
+for ev in jobs_manager.bind(job_id="job_001", include=("stdout","stderr"), from_beginning=True, heartbeat_interval=5.0):
+    if ev.type == "stdout":
+        print(ev.text, end="")
+    elif ev.type == "stderr":
+        print(ev.text, end="")
+    elif ev.type == "status" and ev.status in (
+        JobRecord.Status.c_finished,
+        JobRecord.Status.c_stopped,
+        JobRecord.Status.c_failed,
+        JobRecord.Status.c_failed_start,
+    ):
+        break
 
 # Pull and verify job status
-job_record:JobRecord = jobs_manager.get_status(job_id="job_001")
+job_record: JobRecord = jobs_manager.get_status(job_id="job_001")
 assert job_record.status == JobRecord.Status.c_finished
 
 # How to stop a job
-stdout:str, stder:str = jobs_manager.job_logs(job_id="job_001")
+stdout, stderr = jobs_manager.job_logs(job_id="job_001")
 jobs_manager.stop(job_id="job_001")
 
 ```
