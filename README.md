@@ -9,6 +9,11 @@ The `nodejobs` repository runs, tracks, and logs data about external commands wi
 
 As for the code, its clean and extensible-- it has been for us at least. Core components such as `BaseData`, `JobRecord`, and `JobFilter` define and validate the schema for each job records, helping to prevent key-mismatch errors and ensuring data consistency. Status updates occur whenever you invoke a job command, so there’s no background service to manage. Common use cases include automated install scripts, deployment tasks, and data-transfer operations. Designed for minimalism and extensibility, nodejobs can function as a standalone utility or as the foundation for a bespoke job-management solution. If you are looking for a small job running to build on top of, this might be a good fit. Its large enough to have structure, and safety, but small enough you can choose what you want to add in.
 
+### versions
+- 0.1.0 - Initial release
+- 0.2.0 - Better quality linting, and pip package deploy
+- 0.3.0 - Improvement in stop behaviour with process trees. Safer recursive process cleanup.
+
 ### Install
 ```python
 pip install nodejobs
