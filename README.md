@@ -13,6 +13,7 @@ As for the code, its clean and extensible-- it has been for us at least. Core co
 - 0.1.0 - Initial release
 - 0.2.0 - Better quality linting, and pip package deploy
 - 0.3.0 - Improvement in stop behaviour with process trees. Safer recursive process cleanup.
+- 0.4.0 - (in progress) streaming support and testing (not on pip yet, in evaluation)
 
 ### Install
 ```python
