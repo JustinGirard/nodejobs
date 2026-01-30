@@ -42,6 +42,97 @@ jobs_manager.stop(job_id="job_001")
 
 ```
 
+### Live Streaming (Bind + SSE)
+
+You can stream live job output as it is produced.
+
+- Local generator (no web server needed): `Jobs.bind(job_id, ...)` yields events (`stdout`, `stderr`, `status`, `heartbeat`) with monotonic `seq` and ISO timestamps.
+- HTTP streaming (SSE): `Jobs.sse(job_id, ...)` yields correctly framed Server-Sent Events. Works with browsers (`EventSource`) and Python (`sseclient-py`).
+
+Quick start (local bind):
+```python
+import sys
+from nodejobs import Jobs
+
+jobs = Jobs(db_path="./job_db")
+job_id = "demo1"
+
+# Start a job that prints numbers unbuffered
+jobs.run([sys.executable, "-u", "-c", "import time,sys; [print(i,flush=True) or time.sleep(0.5) for i in range(1,50)]"], job_id)
+
+for ev in jobs.bind(job_id, include=("stdout","stderr"), from_beginning=True, poll_interval=0.1, heartbeat_interval=5.0):
+    if ev.type == "stdout":
+        print(">", ev.text, end="")
+    elif ev.type == "stderr":
+        print("!>", ev.text, end="")
+    elif ev.type == "status":
+        print("[status]", ev.status)
+```
+
+HTTP (SSE) example (FastAPI):
+```python
+from fastapi import FastAPI
+from starlette.responses import StreamingResponse
+from nodejobs import Jobs
+
+app = FastAPI()
+jobs = Jobs(db_path="./job_db")
+
+@app.get("/jobs/{job_id}/stream")
+def stream(job_id: str):
+    headers = {
+        "Cache-Control": "no-cache",
+        "X-Accel-Buffering": "no",
+    }
+    return StreamingResponse(
+        jobs.sse(job_id, include=("stdout","stderr"), heartbeat_interval=5.0),
+        media_type="text/event-stream",
+        headers=headers,
+    )
+```
+
+Browser:
+```html
+<script>
+const es = new EventSource("/jobs/demo1/stream");
+es.addEventListener("stdout", e => {
+  const payload = JSON.parse(e.data);
+  console.log("STDOUT:", payload.text);
+});
+es.addEventListener("stderr", e => { /* ... */ });
+es.addEventListener("status", e => { /* ... */ });
+</script>
+```
+
+Python client (optional dependency):
+```python
+from nodejobs import Jobs
+try:
+    for event in Jobs.subscribe_sse("http://127.0.0.1:8000/jobs/demo1/stream"):
+        print(event.event, event.id, event.data)
+except ImportError as e:
+    # [stream] events stream error: sseclient-py is required for event streaming
+    print(e)
+```
+
+Event types:
+- `stdout`, `stderr`: streamed chunks of output
+- `status`: job state transitions
+- `heartbeat`: periodic keep-alive (default every 5s)
+
+Resume: The stream emits `id: <seq>`. Browsers automatically send `Last-Event-ID` on reconnect. Servers should pass that through to `jobs.sse(..., last_event_id=...)` so streaming resumes at the next id.
+
+#### Troubleshooting Streaming & Buffering
+
+If you see output delivered in large clumps “at the end”, the job process is likely buffering:
+- Prefer unbuffered modes: Python `-u` + `print(..., flush=True)`, `grep --line-buffered`, etc.
+- POSIX (optional): running under a PTY often forces line-buffering (not available on Windows).
+- HTTP proxies: ensure `Content-Type: text/event-stream`, `Cache-Control: no-cache`, and disable proxy buffering (e.g., `X-Accel-Buffering: no` for Nginx).
+
+If your test prints do not appear live:
+- Run the test runner in unbuffered mode: `python -u -m unittest -v`
+- Add `flush=True` to your `print()` calls: `print("x", end="-", flush=True)`
+
 ### Motivation
 
 It felt silly to write yet another job runner, however I always felt like I needed something more than subprocess, but something way less complex than a full on task managent solution. Importantly, I write code that works on edge devices, and so working towards pi and micropython support is important for me as well. Overall, if I need some little set up stages to run, or if I need a script to kick off instructions, I just import and run a nodejob. Its called "nodejobs" as it is an internal tool on a Decelium Node - a server we use internally.
@@ -198,4 +289,3 @@ Ensures robustness against invalid references and missing records.
 
 ---
 Enjoy!
-

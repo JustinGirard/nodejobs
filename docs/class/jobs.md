@@ -170,3 +170,68 @@ for job_id, record in all_jobs.items():
 status_record = jobs_manager.get_status('job001')
 print(f"Job {status_record.self_id} is currently {status_record.status}")
 ```
+
+---
+
+### `bind(self, job_id: str, include: Tuple[str, ...] = ("stdout","stderr"), from_beginning: bool = False, poll_interval: float = 0.25, heartbeat_interval: float = 5.0, last_event_id: Optional[int] = None) -> Iterator[StreamEvent]`
+
+- Streams live job output by tailing stdout/stderr log files and yielding `StreamEvent` instances:
+  - `type`: `"stdout" | "stderr" | "status" | "heartbeat"`
+  - `text`: chunk content for stdout/stderr (if present)
+  - `status`: status string for `status` events
+  - `seq`: monotonically increasing event id (int)
+  - `ts`: ISO timestamp
+
+- Example:
+```python
+for ev in jobs.bind("job123", include=("stdout","stderr"), from_beginning=True):
+    if ev.type == "stdout":
+        handle_stdout(ev.text)
+    elif ev.type == "status" and ev.status in ("finished","stopped","failed"):
+        break
+```
+
+- Errors:
+  - `ValueError` if `job_id` is unknown or log paths are not recorded yet.
+  - Ends naturally after a terminal status and no new output.
+
+---
+
+### `sse(self, job_id: str, include: Tuple[str, ...] = ("stdout","stderr"), from_beginning: bool = False, poll_interval: float = 0.25, heartbeat_interval: float = 5.0, last_event_id: Optional[str] = None) -> Iterator[str]`
+
+- Wraps `bind()` and yields properly framed SSE events:
+  - `id: <seq>`
+  - `event: <type>`
+  - `data: <json payload>`
+  - blank line delimiter between events
+
+- Example (FastAPI):
+```python
+from starlette.responses import StreamingResponse
+@app.get("/jobs/{job_id}/stream")
+def stream(job_id: str):
+    return StreamingResponse(
+        jobs.sse(job_id, include=("stdout","stderr")),
+        media_type="text/event-stream",
+        headers={"Cache-Control":"no-cache", "X-Accel-Buffering":"no"},
+    )
+```
+
+- Resume: Provide HTTP `Last-Event-ID` to continue from the next `seq`.
+- Errors: Propagates `ValueError` from `bind()` for unknown `job_id`.
+
+---
+
+### `@staticmethod subscribe_sse(url: str, session=None, **requests_kwargs) -> Iterable[Event]`
+
+- Python helper for consuming SSE endpoints; requires `sseclient-py`.
+- Usage:
+```python
+from nodejobs import Jobs
+try:
+    for ev in Jobs.subscribe_sse("http://127.0.0.1:8000/jobs/job123/stream"):
+        print(ev.event, ev.id, ev.data)
+except ImportError as e:
+    # [stream] events stream error: sseclient-py is required for event streaming
+    print(e)
+```

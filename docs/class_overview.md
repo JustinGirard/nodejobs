@@ -29,8 +29,20 @@ The `nodejobs` repository provides a schema-driven framework for managing and or
    - Data is accessed via `instance.field`.
    - Filters (`JobFilter`) encapsulate query criteria, again employing schema-defined keys.
    
-   These patterns promote robustness, facilitate debugging, and enable flexible querying.
+    These patterns promote robustness, facilitate debugging, and enable flexible querying.
 
+
+### Streaming Architecture
+
+- Capture layer: each job’s stdout/stderr is written to append-only files (`<logdir>/<logfile>_out.txt`, `<logfile>_errors.txt`).
+- Delivery:
+  - `Jobs.bind(...)`: local generator that tails those files and yields events (`stdout`, `stderr`, `status`, `heartbeat`) with a monotonically increasing `seq` and ISO `ts`.
+  - `Jobs.sse(...)`: wraps `bind()` and frames those events for Server-Sent Events (SSE) with `id: <seq>`, `event: <type>`, `data: <json>`.
+- Reconnect/resume: Clients can provide `Last-Event-ID`; streaming continues from the next `seq`.
+- Liveness: Periodic `heartbeat` events (default 5s) keep long connections alive behind proxies.
+- Reliability:
+  - Set `Content-Type: text/event-stream` and `Cache-Control: no-cache`.
+  - Consider disabling proxy buffering (e.g., `X-Accel-Buffering: no` on Nginx).
 
 ### Key Classes and Data Structures
 
