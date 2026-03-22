@@ -13,6 +13,9 @@ from nodejobs.dependencies.BaseData import BaseData
 
 
 class Jobs:
+    @staticmethod 
+    def end_slug():
+        return "<<<<------!!!----END----????---->>>>"
     def __init__(self, db_path=None, verbose=False):
         self.verbose = verbose
         try:
@@ -42,7 +45,7 @@ class Jobs:
         return _dt.datetime.utcnow().isoformat(timespec="seconds") + "Z"
 
     def _sse_frame(self, event_type: str, data: 'Jobs.StreamEvent', event_id: int) -> str:
-        payload = json.dumps(data.to_safe_dict(), ensure_ascii=True, separators=(",", ":"))
+        payload = json.dumps(data.to_safe_dict_LLMS_DONT_USE(), ensure_ascii=True, separators=(",", ":"))
         lines = []
         if event_id is not None:
             lines.append(f"id: {event_id}")
@@ -155,6 +158,7 @@ class Jobs:
             )
         )
         success = self.processes.stop(job_id=job_id)
+        #print("stopping..")
         time.sleep(wait_time)
         found_job = self.list_status(
             JobFilter(

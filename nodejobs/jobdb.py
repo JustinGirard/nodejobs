@@ -105,6 +105,8 @@ class JobDB:
               (often the new record’s ID or a status code).
         """
         clean_job = JobRecord(job).clean()
+        pid = os.getpid()
+        # print(f"UPERST LOG pid={pid}")
         resp = self.jobdb.execute(
             qtype="upsert",
             source="process_status",

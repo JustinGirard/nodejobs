@@ -146,7 +146,9 @@ class NosqlThread():
                 try:
                     res = cur.execute(query, args)
                 except Exception as e:
-                    print("Could not execute Query :: " +str(query) + " :: " + str(args))
+                    import traceback
+                    tb = traceback.format_exc()
+                    print("Could not execute Query :: " + str(query) + " :: " + str(args) + " :: error=" + str(e) + " :: traceback=" + tb)
                     raise e
             else:
                 res = cur.execute(query)
@@ -260,7 +262,7 @@ class nosqlite():
         if qtype == 'delete':
             return self.sqlite_delete_many( source, filterval, setval, limit, offset, field)
         if qtype == 'insert':
-            return self.sqlite_insert(source, filterval, setval, limit, offset, field)    
+            return self.__sqlite_insert(source, filterval, setval, limit, offset, field)    
         if qtype == 'insert_many':
             return self.sqlite_insert_many(source, filterval, setval, limit, offset, field)    
         if qtype == 'count':
@@ -438,7 +440,7 @@ class nosqlite():
         for rec in existing_records:
             new_rec = self.merge_dicts(rec,setval)
             self.sqlite_delete_many(source, {"_id":rec["_id"]}, None, None, None, None)
-            self.sqlite_insert(source, None, new_rec, None, None, None)
+            self.__sqlite_insert(source, None, new_rec, None, None, None)
         return True
     
     def sqlite_update_many_old(self, source, filterval, setval, limit, offset, field):
@@ -502,8 +504,10 @@ class nosqlite():
 
         query = f"UPDATE {table_name} SET {set_str} WHERE {where_str}"
         return self.__execute(query,tuple(args))
-    
     def sqlite_insert(self, source, filterval, setval, limit, offset, field):
+        print("DIRECT INSERT")
+        self.__sqlite_insert(source, filterval, setval, limit, offset, field)
+    def __sqlite_insert(self, source, filterval, setval, limit, offset, field):
         table_name = source  # Assuming `source` is equivalent to the MongoDB collection name
 
         # Constructing the INSERT clause
@@ -582,7 +586,7 @@ class nosqlite():
         if len(existing_records) > 0:
             return self.sqlite_update_many( source, filterval, setval, limit, offset, field)
         else:
-            return self.sqlite_insert(source, filterval, setval, limit, offset, field)
+            return self.__sqlite_insert(source, filterval, setval, limit, offset, field)
     
     def get_by_path(self, root, items):
         return reduce(lambda d, k: d[k], items, root)

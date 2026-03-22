@@ -44,7 +44,7 @@ class RunJob:
             if job_chek:
                 string = ' '.join(job_chek)
                 try:
-                    if self.job_id in string and 'run_job.py' not in string:
+                    if self.job_id in string and 'run_job.py' not in string and 'nodejob_runner' not in string:
                         return proc
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
                     continue
