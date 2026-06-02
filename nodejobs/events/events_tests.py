@@ -628,8 +628,12 @@ class TestEvents(unittest.TestCase):
         )
         with session.open(path, "ab") as f:
             f.write(b'{"bad": [}\n')  # deliberately malformed
-        with self.assertRaises(StreamReadError):
-            r.read_all()
+        rows = r.read_all()
+        err_rows = [ev for ev in rows if ev.labels.get("error") == "read_error"]
+        self.assertTrue(err_rows)
+        self.assertEqual(err_rows[0].labels.get("source"), "event")
+        self.assertEqual(err_rows[0].content.get("metadata_raw"), '{"bad": [}')
+        self.assertIsNone(err_rows[0].content.get("data_raw"))
 
         # empty file returns []
         empty_path = "logs/empty.ndjson"

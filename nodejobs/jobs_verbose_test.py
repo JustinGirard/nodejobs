@@ -43,28 +43,40 @@ class TestJobsBlackBox(unittest.TestCase):
         return False
 
     def test_run_to_finished(self):
-        # 1. run a short shell command → expect “running” → then “finished”
+        # 1. run a short command → expect “running” → then “finished”
+        # Use python to avoid relying on external shell availability.
+        job_id = "test_run_to_finished_job"
         result = self.jobs.run(
-            command=["bash", "-c", 'echo "starting"; sleep 3; echo "done"'], job_id="t1"
+            command=[
+                sys.executable,
+                "-u",
+                "-c",
+                "import time; print('starting', flush=True); time.sleep(3); print('done', flush=True)",
+            ],
+            job_id=job_id,
         )
         result = JobRecord(result)  # runtime type‐check
-        self.assertEqual(result.self_id, "t1")
-        self.assertEqual(result.status, JobRecord.Status.c_running)
+        self.assertEqual(result.self_id, job_id)
+        if result.status != JobRecord.Status.c_running:
+            out, err = self.jobs.job_logs(job_id)
+            self.fail(
+                f"Expected running, got {result.status}.\nstdout:\n{out}\nstderr:\n{err}"
+            )
 
         time.sleep(1)
         all_jobs = self.jobs.list_status()
-        self.assertIn("t1", all_jobs)
-        rec = JobRecord(all_jobs["t1"])
+        self.assertIn(job_id, all_jobs)
+        rec = JobRecord(all_jobs[job_id])
         self.assertEqual(rec.status, JobRecord.Status.c_running)
 
         # Wait up to 7 seconds for it to finish
-        finished = self._wait_for_status("t1",
-                                         JobRecord.Status.c_finished,
-                                         timeout=7.0)
-        status_rec = self.jobs.get_status(job_id="t1")
+        finished = self._wait_for_status(job_id,
+                                          JobRecord.Status.c_finished,
+                                          timeout=7.0)
+        status_rec = self.jobs.get_status(job_id=job_id)
         self.assertTrue(
             finished,
-            f"Job t1 did not mv to ‘finished’ ]; status: {status_rec}",
+            f"Job {job_id} did not mv to ‘finished’ ]; status: {status_rec}",
         )
 
     def test_job_logs_capture(self):

@@ -6,6 +6,7 @@ from typing import Union, List, Optional, Dict, Tuple
 from datetime import datetime, timezone
 
 from .models import EventData, EventDataContent, _to_iso_utc_z
+from nodejobs.dependencies.BaseData import BaseData
 
 
 class StreamWriteError(Exception):
@@ -62,6 +63,46 @@ def _payload_from_data_record(data: EventDataContent) -> dict:
         return content
     data.pop(EventDataContent._writerNonce, None)
     return data
+
+
+class tReadErrorLabels(BaseData):
+    error: str
+    path: str
+    line: int
+    source: str
+
+
+class tReadErrorContent(BaseData):
+    message: str
+    metadata_raw: (str, None)
+    data_raw: (str, None)
+
+
+def _build_read_error_event(
+    path: str,
+    line_no: int,
+    source: str,
+    metadata_raw: Optional[str],
+    data_raw: Optional[str],
+    err: Exception,
+) -> EventData:
+    nonce = f"read_error_{line_no}_{uuid.uuid4()}"
+    labels = tReadErrorLabels({
+        tReadErrorLabels.error: "read_error",
+        tReadErrorLabels.path: path,
+        tReadErrorLabels.line: line_no,
+        tReadErrorLabels.source: source,
+    })
+    content = tReadErrorContent({
+        tReadErrorContent.message: str(err),
+        tReadErrorContent.metadata_raw: metadata_raw,
+        tReadErrorContent.data_raw: data_raw,
+    })
+    return EventData({
+        EventData.labels: labels,
+        EventData.content: content,
+        EventData._writerNonce: nonce,
+    })
 
 
 def _content_key_subset(content: dict, key_paths: List[str]) -> dict:
@@ -791,8 +832,9 @@ class NDJSONReader:
         def _run():
             if _needs_migration(self._session, self._path):
                 _migrate_sidecar(self._session, self._path)
-            data_map = self._load_data_map()
+            data_map, data_errors = self._load_data_map()
             out: List[EventData] = []
+            out.extend(data_errors)
             with self._session.open(self._path, "rb") as f:
                 lineno = 0
                 for raw in f:
@@ -805,18 +847,30 @@ class NDJSONReader:
                     try:
                         data = json.loads(line)
                     except Exception as e:
-                        raise StreamReadError(
-                            f"Malformed JSON at line {lineno}: {e}"
-                        ) from e
+                        out.append(_build_read_error_event(
+                            self._path,
+                            lineno,
+                            "event",
+                            line,
+                            None,
+                            e,
+                        ))
+                        continue
                     try:
                         ev = EventData(data)
                         if ev._writerNonce in data_map:
                             ev.content = data_map[ev._writerNonce]
                         out.append(ev)
                     except Exception as e:
-                        raise StreamReadError(
-                            f"Schema violation at line {lineno}: {e}"
-                        ) from e
+                        out.append(_build_read_error_event(
+                            self._path,
+                            lineno,
+                            "event",
+                            line,
+                            None,
+                            e,
+                        ))
+                        continue
             return out
 
         return _with_store_lock(self._session, self._path, _run)
@@ -829,7 +883,7 @@ class NDJSONReader:
             if _needs_migration(self._session, self._path):
                 _migrate_sidecar(self._session, self._path)
 
-            data_map = self._load_data_map()
+            data_map, data_errors = self._load_data_map()
 
             with self._session.open(self._path, "rb") as f:
                 f.seek(0, 2)
@@ -853,6 +907,7 @@ class NDJSONReader:
                 # else offset == 0: start at file start
 
                 events: List[EventData] = []
+                events.extend(data_errors)
                 while True:
                     pos_before = f.tell()
                     raw = f.readline()
@@ -868,14 +923,23 @@ class NDJSONReader:
                             ev.content = data_map[ev._writerNonce]
                         events.append(ev)
                     except Exception as e:
-                        raise StreamReadError(f"Error at byte {pos_before}: {e}") from e
+                        events.append(_build_read_error_event(
+                            self._path,
+                            0,
+                            "event",
+                            line,
+                            None,
+                            e,
+                        ))
+                        continue
                 return events, f.tell()
 
         return _with_store_lock(self._session, self._path, _run)
 
-    def _load_data_map(self) -> Dict[str, dict]:
+    def _load_data_map(self) -> Tuple[Dict[str, dict], List[EventData]]:
         data_path = _data_path(self._path)
         out: Dict[str, dict] = {}
+        errors: List[EventData] = []
         try:
             with self._session.open(data_path, "rb") as f:
                 lineno = 0
@@ -890,14 +954,20 @@ class NDJSONReader:
                         obj = json.loads(line)
                         data = EventDataContent(obj)
                     except Exception as e:
-                        raise StreamReadError(
-                            f"Malformed data JSON at line {lineno}: {e}"
-                        ) from e
+                        errors.append(_build_read_error_event(
+                            data_path,
+                            lineno,
+                            "sidecar",
+                            None,
+                            line,
+                            e,
+                        ))
+                        continue
                     nonce = data._writerNonce
                     out[nonce] = _payload_from_data_record(data)
         except FileNotFoundError:
-            return {}
-        return out
+            return ({}, [])
+        return (out, errors)
 
     def search(
         self,

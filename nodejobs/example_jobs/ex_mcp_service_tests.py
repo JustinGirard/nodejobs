@@ -4,6 +4,7 @@ import socket
 import sys
 import time
 import unittest
+import os
 from nodejobs.jobs import Jobs, JobRecord
 from fastmcp import Client
 from nodejobs.dependencies.TestService import TestService
@@ -46,6 +47,7 @@ class TestServiceMCPTests(unittest.TestCase):
         host, port, path = "127.0.0.1", _free_port(), "/mcp"
         job_id = "testservice_mcp_http"
 
+        ex_dir = os.path.dirname(__file__)
         cmd = [
             sys.executable, "ex_mcp_service.py",
             "serve",
@@ -54,12 +56,32 @@ class TestServiceMCPTests(unittest.TestCase):
             f"port={port}",
             f"path={path}",
         ]
-        jobs.run(command=cmd, job_id=job_id)
+        jobs.run(command=cmd, job_id=job_id, cwd=ex_dir)
 
         timeout = time.time() + 5
         while jobs.get_status(job_id).status == JobRecord.Status.c_starting:
             self.assertTrue(time.time() < timeout, "Server failed to start in time")
             time.sleep(0.1)
+
+        st = jobs.get_status(job_id).status
+        if st != JobRecord.Status.c_running:
+            out, err = jobs.job_logs(job_id)
+            self.fail(
+                f"MCP server did not start (status={st}).\nstdout:\n{out}\nstderr:\n{err}"
+            )
+
+        # Wait for TCP accept (avoid connect-race)
+        deadline = time.time() + 5
+        while True:
+            try:
+                s = socket.create_connection((host, port), timeout=0.2)
+                s.close()
+                break
+            except OSError:
+                self.assertTrue(
+                    time.time() < deadline, "Server socket never became ready"
+                )
+                time.sleep(0.05)
 
         async def _talk():
             client = Client(f"http://{host}:{port}{path}")

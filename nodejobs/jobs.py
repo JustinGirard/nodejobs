@@ -198,9 +198,9 @@ class Jobs:
                 print(f"inspecting job (C): {job}")
             result = JobRecord(
                 {
-                    job.last_pid: job.last_pid,
-                    job.self_id: job.self_id,
-                    job.status: job.status,
+                    JobRecord.last_pid: job.last_pid,
+                    JobRecord.self_id: job.self_id,
+                    JobRecord.status: job.status,
                 }
             )
         db_res = self.jobdb.update_status(result)
