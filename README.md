@@ -150,6 +150,51 @@ If your test prints do not appear live:
 - Run the test runner in unbuffered mode: `python -u -m unittest -v`
 - Add `flush=True` to your `print()` calls: `print("x", end="-", flush=True)`
 
+### Scheduling (Pump-Triggered, No Daemon)
+
+`nodejobs` now supports persisted schedules. Schedules are evaluated when the normal status pump runs (`list_status()` and `get_status()`), so no background scheduler process is required.
+
+```python
+import datetime as dt
+from nodejobs import Jobs
+
+jobs = Jobs(db_path="./job_db")
+
+# recurring schedule (every 60s)
+jobs.set_schedule({
+    "schedule_id": "sched_backup_every_min",
+    "job_id": "backup_job",
+    "command": ["python", "-u", "backup.py"],
+    "next_run_at": dt.datetime.now(dt.timezone.utc).replace(tzinfo=None),
+    "interval_sec": 60,
+    "enabled": True,
+})
+```
+
+```python
+# one-shot schedule
+jobs.set_schedule({
+    "schedule_id": "sched_once",
+    "job_id": "one_shot_job",
+    "command": ["python", "-u", "once.py"],
+    "next_run_at": "2026-07-15T12:00:00Z",
+    "enabled": True,
+})
+```
+
+```python
+# inspect / remove schedules
+schedules = jobs.list_schedules()
+jobs.remove_schedule("sched_once")
+```
+
+Execution semantics:
+- Schedule reactivation runs during `list_status()` / `get_status()` pump activity.
+- Overlap protection is by `job_id` while status is `starting`, `running`, or `stopping`.
+- Recurring schedules advance `next_run_at` by `interval_sec`.
+- One-shot schedules are disabled before launch; on launch failure they are re-enabled with a small retry delay and `last_error` is recorded.
+- `attempt_count` tracks launch attempts for supportability.
+
 ### Motivation
 
 It felt silly to write yet another job runner, however I always felt like I needed something more than subprocess, but something way less complex than a full on task managent solution. Importantly, I write code that works on edge devices, and so working towards pi and micropython support is important for me as well. Overall, if I need some little set up stages to run, or if I need a script to kick off instructions, I just import and run a nodejob. Its called "nodejobs" as it is an internal tool on a Decelium Node - a server we use internally.

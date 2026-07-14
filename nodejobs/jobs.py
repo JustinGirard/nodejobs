@@ -1,8 +1,17 @@
 from nodejobs.processes import Processes
-from nodejobs.jobdb import JobDB, JobFilter, JobRecord, JobRecordDict
+from nodejobs.jobdb import (
+    JobDB,
+    JobFilter,
+    JobRecord,
+    JobRecordDict,
+    ScheduleFilter,
+    ScheduleRecord,
+    ScheduleRecordDict,
+)
 from pathlib import Path
 import os
 import time
+import threading
 from psutil import Process
 from typing import Tuple, Union, List
 import subprocess
@@ -31,6 +40,7 @@ class Jobs:
             #print(f"Jobs.__init__ ({e}). DB jobs working in {self.db_path}")
         self.jobdb = JobDB(self.db_path)
         self.processes = Processes(self.jobdb, verbose)
+        self._schedule_pump_lock = threading.Lock()
 
     # === Streaming helpers (SSE + event model) ===
     class StreamEvent(BaseData):
@@ -55,6 +65,24 @@ class Jobs:
             lines.append(f"data: {ln}")
         lines.append("")
         return "\n".join(lines) + "\n"
+
+    def _parse_schedule_time(self, value, field_name: str) -> _dt.datetime:
+        if isinstance(value, _dt.datetime):
+            if value.tzinfo is not None:
+                return value.astimezone(_dt.timezone.utc).replace(tzinfo=None)
+            return value
+        if isinstance(value, str):
+            raw = value.strip()
+            if raw.endswith("Z"):
+                raw = raw[:-1]
+            try:
+                parsed = _dt.datetime.fromisoformat(raw)
+            except Exception:
+                raise ValueError(f"{field_name} must be datetime or ISO datetime string")
+            if parsed.tzinfo is not None:
+                return parsed.astimezone(_dt.timezone.utc).replace(tzinfo=None)
+            return parsed
+        raise ValueError(f"{field_name} must be datetime or ISO datetime string")
 
     def __find(self, job_id: str):
         assert job_id is not None, "can only select by job_id"
@@ -142,6 +170,174 @@ class Jobs:
 
         self.jobdb.update_status(result)
         return result
+
+    def set_schedule(self, schedule: dict) -> ScheduleRecord:
+        if not isinstance(schedule, dict):
+            raise ValueError("schedule must be a dict")
+        schedule_id = schedule.get(ScheduleRecord.schedule_id)
+        job_id = schedule.get(ScheduleRecord.job_id)
+        command = schedule.get(ScheduleRecord.command)
+        next_run_raw = schedule.get(ScheduleRecord.next_run_at)
+        if not isinstance(schedule_id, str) or len(schedule_id.strip()) == 0:
+            raise ValueError("schedule_id is required")
+        if not isinstance(job_id, str) or len(job_id.strip()) == 0:
+            raise ValueError("job_id is required")
+        if isinstance(command, str):
+            command = [p for p in command.strip().split(" ") if len(p) > 0]
+        if not isinstance(command, list) or len(command) == 0:
+            raise ValueError("command must be a non-empty list")
+        if not all(isinstance(p, str) and len(p) > 0 for p in command):
+            raise ValueError("command entries must be non-empty strings")
+        next_run_at = self._parse_schedule_time(next_run_raw, ScheduleRecord.next_run_at)
+        interval_sec = schedule.get(ScheduleRecord.interval_sec)
+        if interval_sec is not None and (not isinstance(interval_sec, int) or interval_sec <= 0):
+            raise ValueError("interval_sec must be a positive int when set")
+        enabled = schedule.get(ScheduleRecord.enabled, True)
+        if not isinstance(enabled, bool):
+            raise ValueError("enabled must be bool")
+        cwd = schedule.get(ScheduleRecord.cwd)
+        if cwd is not None and (not isinstance(cwd, str) or len(cwd.strip()) == 0):
+            raise ValueError("cwd must be a non-empty string when set")
+        if isinstance(cwd, str):
+            cwd = cwd.strip()
+        envs = schedule.get(ScheduleRecord.envs)
+        if envs is not None and not isinstance(envs, dict):
+            raise ValueError("envs must be a dict when set")
+        attempt_count = schedule.get(ScheduleRecord.attempt_count, 0)
+        if not isinstance(attempt_count, int) or attempt_count < 0:
+            raise ValueError("attempt_count must be a non-negative int")
+        payload = {
+            ScheduleRecord.schedule_id: schedule_id.strip(),
+            ScheduleRecord.job_id: job_id.strip(),
+            ScheduleRecord.command: command,
+            ScheduleRecord.next_run_at: next_run_at,
+            ScheduleRecord.enabled: enabled,
+            ScheduleRecord.attempt_count: attempt_count,
+        }
+        if interval_sec is not None:
+            payload[ScheduleRecord.interval_sec] = interval_sec
+        if cwd is not None:
+            payload[ScheduleRecord.cwd] = cwd
+        if envs is not None:
+            payload[ScheduleRecord.envs] = envs
+        rec = ScheduleRecord(payload)
+        self.jobdb.update_schedule(rec)
+        return rec
+
+    def list_schedules(self, filter=None) -> ScheduleRecordDict:
+        if filter is None:
+            return self.jobdb.list_schedules()
+        return self.jobdb.list_schedules(ScheduleFilter(filter))
+
+    def remove_schedule(self, schedule_id: str):
+        if not isinstance(schedule_id, str) or len(schedule_id.strip()) == 0:
+            raise ValueError("schedule_id is required")
+        return self.jobdb.remove_schedule(schedule_id.strip())
+
+    def _active_job_ids(self):
+        active_ids = set()
+        for status in (JobRecord.Status.c_starting, JobRecord.Status.c_running, JobRecord.Status.c_stopping):
+            try:
+                recs = self.jobdb.list_status(JobFilter({JobFilter.status: status}))
+            except Exception as e:
+                if self.verbose is True:
+                    print(f"...schedule active-id lookup failed for status={status}: {e}")
+                continue
+            for job_id in recs.keys():
+                active_ids.add(job_id)
+        return active_ids
+
+    def _run_due_schedules(self):
+        # Prevent concurrent schedule pumps from double-launching due jobs.
+        if not self._schedule_pump_lock.acquire(blocking=False):
+            return
+        try:
+            now_at = _dt.datetime.now(_dt.timezone.utc).replace(tzinfo=None)
+            retry_delay_sec = 5
+            try:
+                due_dict = self.jobdb.list_due_schedules(now_at=now_at)
+            except Exception as e:
+                if self.verbose is True:
+                    print(f"...schedule due-query failed: {e}")
+                return
+            if len(due_dict) == 0:
+                return
+
+            active_ids = self._active_job_ids()
+            due_records = list(due_dict.values())
+            due_records.sort(key=lambda r: (r.next_run_at, r.schedule_id))
+
+            for sched in due_records:
+                recurring_sec = sched.interval_sec if isinstance(sched.interval_sec, int) and sched.interval_sec > 0 else None
+                next_attempt_count = (
+                    sched.attempt_count if isinstance(sched.attempt_count, int) and sched.attempt_count >= 0 else 0
+                ) + 1
+                try:
+                    if sched.job_id in active_ids:
+                        continue
+
+                    if recurring_sec is None:
+                        reserved_enabled = False
+                        reserved_next_run = sched.next_run_at
+                    else:
+                        reserved_enabled = True
+                        reserved_next_run = now_at + _dt.timedelta(seconds=recurring_sec)
+
+                    reserve_record = ScheduleRecord({
+                        ScheduleRecord.schedule_id: sched.schedule_id,
+                        ScheduleRecord.job_id: sched.job_id,
+                        ScheduleRecord.command: sched.command,
+                        ScheduleRecord.next_run_at: reserved_next_run,
+                        ScheduleRecord.interval_sec: sched.interval_sec,
+                        ScheduleRecord.enabled: reserved_enabled,
+                        ScheduleRecord.cwd: sched.cwd,
+                        ScheduleRecord.envs: sched.envs,
+                        ScheduleRecord.last_run_at: now_at,
+                        ScheduleRecord.last_error: None,
+                        ScheduleRecord.attempt_count: next_attempt_count,
+                    })
+                    self.jobdb.update_schedule(reserve_record)
+
+                    launch_record = self.run(
+                        command=sched.command,
+                        job_id=sched.job_id,
+                        cwd=sched.cwd,
+                        envs=sched.envs,
+                    )
+                    launch_status = getattr(launch_record, "status", None)
+                    if launch_status == JobRecord.Status.c_failed_start:
+                        raise Exception(f"failed_start from run() for job_id={sched.job_id}")
+                    active_ids.add(sched.job_id)
+                except Exception as e:
+                    if self.verbose is True:
+                        print(f"...schedule launch failed schedule_id={sched.schedule_id} job_id={sched.job_id}: {e}")
+
+                    failed_next_run = (
+                        now_at + _dt.timedelta(seconds=retry_delay_sec)
+                        if recurring_sec is None
+                        else now_at + _dt.timedelta(seconds=recurring_sec)
+                    )
+                    failed_record = ScheduleRecord({
+                        ScheduleRecord.schedule_id: sched.schedule_id,
+                        ScheduleRecord.job_id: sched.job_id,
+                        ScheduleRecord.command: sched.command,
+                        ScheduleRecord.next_run_at: failed_next_run,
+                        ScheduleRecord.interval_sec: sched.interval_sec,
+                        ScheduleRecord.enabled: True,
+                        ScheduleRecord.cwd: sched.cwd,
+                        ScheduleRecord.envs: sched.envs,
+                        ScheduleRecord.last_run_at: now_at,
+                        ScheduleRecord.last_error: str(e),
+                        ScheduleRecord.attempt_count: next_attempt_count,
+                    })
+                    try:
+                        self.jobdb.update_schedule(failed_record)
+                    except Exception as e2:
+                        if self.verbose is True:
+                            print(f"...schedule failure bookkeeping failed schedule_id={sched.schedule_id}: {e2}")
+                    continue
+        finally:
+            self._schedule_pump_lock.release()
 
     def stop(self, job_id: str, wait_time: int = 1) -> JobRecord:
 
@@ -298,6 +494,7 @@ class Jobs:
         filter = JobFilter(filter)
         # print(f"------------------- B {filter}")
         self._update_status()
+        self._run_due_schedules()
         # print(f"------------------- C {filter}")
         return JobRecordDict(self.jobdb.list_status(filter))
 

@@ -75,6 +75,11 @@ def suppress_stdout():
 
 import argparse, pprint, sys
 class BaseService(): 
+
+    @classmethod
+    def authorize_command(cls, command_id: str, *, transport=None, auth=None, kwargs=None):
+        # Default: allow. Override in subclasses to enforce auth and return metadata on rejection.
+        return True, {}
     
     @classmethod
     def get_command_map(cls):
@@ -147,6 +152,13 @@ class BaseService():
         method = command_info['method']
         for arg in required_args:
             assert arg in kwargs, f"Missing required argument: {arg} for command {cmd}()"
+
+        allowed, meta = cls.authorize_command(cmd, transport=None, auth=None, kwargs=kwargs)
+        if not isinstance(allowed, bool) or not isinstance(meta, dict):
+            raise TypeError("authorize_command must return (bool, dict)")
+        if not allowed:
+            return meta
+
         del(kwargs['__command'])
         method_kwargs = kwargs
         return method(**method_kwargs)   
@@ -1069,7 +1081,5 @@ if __name__ == "__main__":
 #         ext = ".exe" if (platform or sys.platform).startswith("win") else ""
 #         return f"{name}{ext}"
 #----------------------------------------------------------------------------------------
-
-
 
 

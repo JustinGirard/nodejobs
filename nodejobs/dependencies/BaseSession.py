@@ -153,8 +153,14 @@ class DataSession(BaseSession):
         return os.path.relpath(path, doc_root)
 
     def to_local_path(self, path):
+        # Enforce containment at the conversion boundary.
+        if not self.is_contained_path(path):
+            raise Exception("Not a contained path")
         doc_root = self[DataSession.f_root]
         return os.path.abspath(os.path.join(doc_root, path))
+
+    def stat(self, path: str):
+        return os.stat(self.to_local_path(path))
 
 
     def __init__(self, in_dict, trim=False):
@@ -269,6 +275,41 @@ class DataSession(BaseSession):
         assert isinstance(path, str) and path, "Must supply a non-empty path"
         full_path = os.path.join(self[self.f_root], path)
         os.makedirs(full_path, exist_ok=exist_ok)
+
+    def move(self, src: str, dst: str, overwrite: bool = True) -> None:
+        assert isinstance(src, str) and src, "Must supply a non-empty src"
+        assert isinstance(dst, str) and dst, "Must supply a non-empty dst"
+        if not self.is_contained_path(src) or not self.is_contained_path(dst):
+            raise Exception("Not a contained path")
+        if not self.exists(src):
+            raise FileNotFoundError(src)
+        if (overwrite is not True) and self.exists(dst):
+            raise Exception("destination exists")
+        if overwrite is True and self.exists(dst):
+            self.delete(dst)
+        parent = os.path.dirname(dst)
+        if parent and parent not in (".", "/"):
+            self.mkdir(parent, exist_ok=True)
+        shutil.move(self.to_local_path(src), self.to_local_path(dst))
+
+    def copy(self, src: str, dst: str, overwrite: bool = True) -> None:
+        assert isinstance(src, str) and src, "Must supply a non-empty src"
+        assert isinstance(dst, str) and dst, "Must supply a non-empty dst"
+        if not self.is_contained_path(src) or not self.is_contained_path(dst):
+            raise Exception("Not a contained path")
+        if not self.exists(src):
+            raise FileNotFoundError(src)
+        if (overwrite is not True) and self.exists(dst):
+            raise Exception("destination exists")
+        if overwrite is True and self.exists(dst):
+            self.delete(dst)
+        parent = os.path.dirname(dst)
+        if parent and parent not in (".", "/"):
+            self.mkdir(parent, exist_ok=True)
+        if self.isfolder(src):
+            shutil.copytree(self.to_local_path(src), self.to_local_path(dst))
+        else:
+            shutil.copy2(self.to_local_path(src), self.to_local_path(dst))
 
 
     def get_root(self):

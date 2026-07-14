@@ -116,6 +116,10 @@ class NosqlThread():
             for a in args_raw:
                 if type(a) == datetime.datetime:
                     args.append(jsonwithdate.date_dump(a)) 
+                elif type(a) == bool:
+                    # SQLite/json_extract compares booleans as numeric 1/0 in practice.
+                    # Normalize explicitly so strict argument validation remains stable.
+                    args.append(1 if a else 0)
                 elif type(a) == dict:
                     args.append(jsonwithdate.dumps(a)) 
                     assign_a_temp.append(cnt)
@@ -127,11 +131,26 @@ class NosqlThread():
                 else:
                     args.append(a) 
                 cnt = cnt + 1
-        for b in args:
+        for arg_index, b in enumerate(args):
             try:
-                assert (b is None) or (type(b) in [str,int,float])
+                assert (b is None) or (type(b) in [str, int, float])
             except Exception as e:
-                print("Found an invalid argument "+ str(b) + " of type " + str(type(b)))
+                context_path = path if path is not None else ':memory:'
+                query_preview = query if len(query) <= 400 else (query[:400] + "...<truncated>")
+                args_preview = [repr(x)[:120] for x in args]
+                raw_types = [str(type(x)) for x in (args_raw or [])]
+                invalid_context = {
+                    "arg_index": arg_index,
+                    "arg_value": repr(b),
+                    "arg_type": str(type(b)),
+                    "sqlite_path": context_path,
+                    "query_preview": query_preview,
+                    "normalized_args_preview": args_preview,
+                    "raw_arg_types": raw_types,
+                    "json_normalized_indexes": assign_a_temp,
+                    "validation_rule": "allowed: None, str, int, float (strict type check)",
+                }
+                print("[nosqlite] Found invalid sqlite argument. Context=" + json.dumps(invalid_context, default=str))
                 raise e
         if path == None:
             path = ':memory:'

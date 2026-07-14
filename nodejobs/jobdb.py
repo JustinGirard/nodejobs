@@ -55,9 +55,41 @@ class JobFilter(BaseData):
     last_update: (datetime.datetime, None)
 
 
+class ScheduleRecord(BaseData):
+    schedule_id: str
+    job_id: str
+    command: list
+    next_run_at: datetime.datetime
+    interval_sec: (int, None)
+    enabled: (bool, True)
+    cwd: (str, None)
+    envs: (dict, None)
+    last_run_at: (datetime.datetime, None)
+    last_error: (str, None)
+    attempt_count: (int, 0)
+
+
+class ScheduleFilter(BaseData):
+    schedule_id: (str, None)
+    job_id: (str, None)
+    enabled: (bool, None)
+    next_run_at: (datetime.datetime, None)
+
+
+class ScheduleRecordDict(BaseData):
+    f_all = "*"
+
+    def get_keys(self):
+        required = {}
+        optional = {ScheduleRecordDict.f_all: ScheduleRecord}
+        return required, optional
+
+
 class JobDB:
     JobRecord = JobRecord
     JobFilter = JobFilter
+    ScheduleRecord = ScheduleRecord
+    ScheduleFilter = ScheduleFilter
 
     def __init__(self, db_path: str):
         """
@@ -232,3 +264,83 @@ class JobDB:
             )
             jobs_by_id[j.self_id] = j
         return JobRecordDict(jobs_by_id)
+
+    def update_schedule(self, schedule):
+        clean_schedule = ScheduleRecord(schedule).clean()
+        schedule_id = clean_schedule[ScheduleRecord.schedule_id]
+        resp = self.jobdb.execute(
+            qtype="upsert",
+            source="job_schedule",
+            filterval={ScheduleFilter.schedule_id: schedule_id},
+            setval=clean_schedule,
+            limit=None,
+            offset=None,
+            field=None,
+        )
+        return resp
+
+    def list_schedules(self, filter=None):
+        if filter is None:
+            clean_filter = {}
+        else:
+            clean_filter = ScheduleFilter(filter, trim=True)
+        resp = self.jobdb.execute(
+            qtype="find",
+            source="job_schedule",
+            filterval=clean_filter,
+            setval=None,
+            limit=None,
+            offset=None,
+            field=None,
+        )
+        if isinstance(resp, Exception):
+            raise resp
+        schedules_by_id = {}
+        for s in resp:
+            rec = ScheduleRecord(s)
+            schedules_by_id[rec.schedule_id] = rec
+        return ScheduleRecordDict(schedules_by_id)
+
+    def remove_schedule(self, schedule_id: str):
+        if not schedule_id:
+            raise Exception("schedule_id cant be empty")
+        resp = self.jobdb.execute(
+            qtype="delete",
+            source="job_schedule",
+            filterval={ScheduleFilter.schedule_id: schedule_id},
+            setval=None,
+            limit=None,
+            offset=None,
+            field=None,
+        )
+        return resp
+
+    def list_due_schedules(self, now_at=None):
+        if now_at is None:
+            now_at = now_dt()
+        if not isinstance(now_at, datetime.datetime):
+            raise Exception(f"list_due_schedules expected datetime, got {type(now_at)}")
+        resp = self.jobdb.execute(
+            qtype="find",
+            source="job_schedule",
+            filterval={
+                ScheduleFilter.enabled: 1,
+                ScheduleRecord.next_run_at: {"$lte": now_at},
+            },
+            setval=None,
+            limit=None,
+            offset=None,
+            field=None,
+        )
+        if isinstance(resp, Exception):
+            raise resp
+        due_by_id = {}
+        for s in resp:
+            rec = ScheduleRecord(s)
+            if not isinstance(rec.next_run_at, datetime.datetime):
+                raise Exception(
+                    f"Schedule '{rec.schedule_id}' has invalid next_run_at type: {type(rec.next_run_at)}"
+                )
+            if rec.enabled is True and rec.next_run_at <= now_at:
+                due_by_id[rec.schedule_id] = rec
+        return ScheduleRecordDict(due_by_id)

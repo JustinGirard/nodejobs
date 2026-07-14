@@ -123,3 +123,49 @@ jobs = db.list_status(filter={"status": "running"})
 for job_id, record in jobs.items():
     print(f"Job {job_id} is currently {record.status}")
 ```
+
+---
+
+### Schedule Storage APIs (`ScheduleRecord`, `ScheduleFilter`, schedule CRUD)
+
+`JobDB` now persists scheduler records in a dedicated source (`job_schedule`) separate from `process_status`.
+
+### `ScheduleRecord` fields
+
+- `schedule_id: str`
+- `job_id: str`
+- `command: list`
+- `next_run_at: datetime`
+- `interval_sec: Optional[int]`
+- `enabled: bool = True`
+- `cwd: Optional[str]`
+- `envs: Optional[dict]`
+- `last_run_at: Optional[datetime]`
+- `last_error: Optional[str]`
+- `attempt_count: int = 0`
+
+### `ScheduleFilter` fields
+
+- `schedule_id: Optional[str]`
+- `job_id: Optional[str]`
+- `enabled: Optional[bool]`
+- `next_run_at: Optional[datetime]`
+
+### `update_schedule(self, schedule)`
+
+- Upserts a schedule record by `schedule_id` into `job_schedule`.
+
+### `list_schedules(self, filter: Optional[dict] = None) -> ScheduleRecordDict`
+
+- Returns schedule records keyed by `schedule_id`.
+
+### `remove_schedule(self, schedule_id: str)`
+
+- Deletes a schedule record by `schedule_id`.
+
+### `list_due_schedules(self, now_at: Optional[datetime] = None) -> ScheduleRecordDict`
+
+- Returns schedules where:
+  - `enabled == True`
+  - `next_run_at <= now_at` (defaults to current UTC naive timestamp)
+- Used by `Jobs._run_due_schedules(...)` during normal pump execution.

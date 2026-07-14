@@ -235,3 +235,49 @@ except ImportError as e:
     # [stream] events stream error: sseclient-py is required for event streaming
     print(e)
 ```
+
+---
+
+### Scheduling APIs (`set_schedule`, `list_schedules`, `remove_schedule`)
+
+The `Jobs` class now exposes first-class schedule management APIs.
+
+### `set_schedule(self, schedule: dict) -> ScheduleRecord`
+
+- Creates or updates a persisted schedule.
+- Required fields:
+  - `schedule_id` (`str`)
+  - `job_id` (`str`)
+  - `command` (`List[str]` or space-delimited `str`)
+  - `next_run_at` (`datetime` or ISO datetime string)
+- Optional fields:
+  - `interval_sec` (`int`) for recurring schedules
+  - `enabled` (`bool`, default `True`)
+  - `cwd` (`str`)
+  - `envs` (`dict`)
+  - `attempt_count` (`int`, default `0`)
+- Validation is fail-fast (`ValueError`) for malformed payloads.
+
+### `list_schedules(self, filter: dict = None) -> ScheduleRecordDict`
+
+- Returns persisted schedules, optionally filtered by schedule fields.
+
+### `remove_schedule(self, schedule_id: str)`
+
+- Removes a persisted schedule by ID.
+- Raises `ValueError` when `schedule_id` is empty/invalid.
+
+### Pump-triggered execution semantics
+
+- Due schedules are launched when the normal job pump runs:
+  - `list_status(...)`
+  - `get_status(...)` (via `list_status(...)`)
+- Ordering in pump path:
+  1) refresh process status (`_update_status`)
+  2) run due schedules (`_run_due_schedules`)
+  3) return current status records
+- Overlap prevention: a due schedule is skipped when its `job_id` is already active (`starting`, `running`, `stopping`).
+- Failure bookkeeping:
+  - `last_error` is set on launch failures
+  - `attempt_count` increments per launch attempt
+  - one-shot failures are re-enabled with retry delay; recurring schedules stay interval-based
