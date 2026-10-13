@@ -7,28 +7,64 @@ import time
 import sys
 import json
 import signal
+import traceback
 
 
 class Processes:
     def __init__(self, job_db=None, verbose=False):
         self.verbose = verbose
         self._processes: Dict[str, subprocess.Popen] = {}
-        threading.Thread(target=self._reap_loop, daemon=True).start()
+        self._processes_lock = threading.RLock()
+        self._reaper_lock = threading.Lock()
+        self._reaper_thread = None
+        self._start_reaper()
+
+    def _start_reaper(self):
+        with self._reaper_lock:
+            t = self._reaper_thread
+            if isinstance(t, threading.Thread) and t.is_alive():
+                return
+            t = threading.Thread(
+                target=self._reap_loop,
+                daemon=True,
+                name="nodejobs-process-reaper",
+            )
+            self._reaper_thread = t
+            t.start()
+
+    def _ensure_reaper_alive(self):
+        t = self._reaper_thread
+        if not isinstance(t, threading.Thread) or not t.is_alive():
+            self._start_reaper()
 
     def _reap_loop(self):
         while True:
-            if self.verbose is True:
-                print("reaping ... ", end="")
-            for jid, proc in list(self._processes.items()):
+            try:
                 if self.verbose is True:
-                    print(f",  {jid}", end="")
-                if proc.poll() is not None:
-                    proc.wait()  # reap
-                    # optional: update your JobDB here, e.g.
-                    # self.jobdb.update_status(jid, proc.returncode)
-                    del self._processes[jid]
-            if self.verbose is True:
-                print(".. reaped")
+                    print("reaping ... ", end="")
+                with self._processes_lock:
+                    items = list(self._processes.items())
+                for jid, proc in items:
+                    if self.verbose is True:
+                        print(f",  {jid}", end="")
+                    try:
+                        if proc.poll() is not None:
+                            proc.wait()  # reap
+                            # optional: update your JobDB here, e.g.
+                            # self.jobdb.update_status(jid, proc.returncode)
+                            with self._processes_lock:
+                                self._processes.pop(jid, None)
+                    except Exception as ex:
+                        if self.verbose:
+                            print(f"[reaper] jid={jid} item error: {ex}")
+                if self.verbose is True:
+                    print(".. reaped")
+            except Exception as ex:
+                # Never let the reaper thread die silently.
+                if self.verbose:
+                    print(f"[reaper] loop error: {ex}")
+                    print(traceback.format_exc())
+                time.sleep(0.25)
 
             time.sleep(1)
 
@@ -108,24 +144,41 @@ class Processes:
                             envs=envs,
                             logdir=logdir)
 
-        process = subprocess.Popen(
-            command,
-            shell=False,
-            cwd=cwd,
-            env={**os.environ, **(envs or {})}, 
-            stdout=out_f,
-            stderr=err_f,
-            preexec_fn=os.setsid,
-            stdin=subprocess.DEVNULL,
-        )
         try:
-            self._processes
-        except Exception:
-            self._processes = {}
-        self._processes[job_id] = process
+            process = subprocess.Popen(
+                command,
+                shell=False,
+                cwd=cwd,
+                env={**os.environ, **(envs or {})},
+                stdout=out_f,
+                stderr=err_f,
+                preexec_fn=os.setsid,
+                stdin=subprocess.DEVNULL,
+            )
+        except Exception as ex:
+            startup_failure = (
+                "[nodejobs] failed to start wrapper process\n"
+                f"job_id={job_id}\n"
+                f"cwd={cwd}\n"
+                f"logfile={logfile}\n"
+                f"wrapper_command={command}\n"
+                f"error={ex.__class__.__name__}: {ex}\n"
+                f"traceback:\n{traceback.format_exc()}\n"
+            )
+            try:
+                err_f.write(startup_failure)
+                err_f.flush()
+                os.fsync(err_f.fileno())
+            except Exception:
+                pass
+            raise
+        finally:
+            out_f.close()
+            err_f.close()
 
-        out_f.close()
-        err_f.close()
+        self._ensure_reaper_alive()
+        with self._processes_lock:
+            self._processes[job_id] = process
         return process
 
     def find(self, job_id):
@@ -212,6 +265,7 @@ class Processes:
         '''
         # verbose = True
         verbose = self.verbose if verbose is None else verbose
+        self._ensure_reaper_alive()
         proc = self.find(job_id)
         if not proc:
             if verbose:
@@ -291,7 +345,8 @@ class Processes:
             else:
                 print(f"[w. stop:{job_id}] all processes terminated")
 
-        ph = self._processes.pop(job_id, None)
+        with self._processes_lock:
+            ph = self._processes.pop(job_id, None)
         if ph is not None:
             try:
                 ph.wait(timeout=1)

@@ -26,9 +26,9 @@ class StreamReadError(Exception):
 # -----------------------------
 
 # Lock configuration (ms)
-_LOCK_TTL_MS = 2000
+_LOCK_TTL_MS = 20000
 _LOCK_POLL_MS = 25
-_LOCK_MAX_WAIT_MS = 15000
+_LOCK_MAX_WAIT_MS = 30000
 
 _LOCK_KEY_PID = "pid"
 _LOCK_KEY_EXPIRES = "expiresAtMs"
@@ -103,6 +103,27 @@ def _build_read_error_event(
         EventData.content: content,
         EventData._writerNonce: nonce,
     })
+
+
+def _inject_missing_content(ev: EventData) -> EventData:
+    c = ev.content if isinstance(ev.content, dict) else {}
+    if not isinstance(c, dict):
+        c = {}
+    event_id = c.get("id") if isinstance(c.get("id"), str) and c.get("id") else "missing"
+    c["id"] = event_id
+    if not isinstance(c.get("gui_label"), str) or not c.get("gui_label"):
+        c["gui_label"] = event_id
+    if c.get("payload") is None:
+        c["payload"] = ""
+    elif not isinstance(c.get("payload"), str):
+        c["payload"] = str(c.get("payload"))
+    if "role" not in c:
+        c["role"] = None
+    if "message_id" not in c:
+        c["message_id"] = None
+    c["_missing_sidecar"] = True
+    ev.content = c
+    return ev
 
 
 def _content_key_subset(content: dict, key_paths: List[str]) -> dict:
@@ -860,6 +881,8 @@ class NDJSONReader:
                         ev = EventData(data)
                         if ev._writerNonce in data_map:
                             ev.content = data_map[ev._writerNonce]
+                        else:
+                            ev = _inject_missing_content(ev)
                         out.append(ev)
                     except Exception as e:
                         out.append(_build_read_error_event(
@@ -921,6 +944,8 @@ class NDJSONReader:
                         ev = EventData(data)
                         if ev._writerNonce in data_map:
                             ev.content = data_map[ev._writerNonce]
+                        else:
+                            ev = _inject_missing_content(ev)
                         events.append(ev)
                     except Exception as e:
                         events.append(_build_read_error_event(

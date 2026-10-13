@@ -19,6 +19,44 @@ import json
 import datetime as _dt
 from typing import Iterator, Optional, Dict
 from nodejobs.dependencies.BaseData import BaseData
+from nodejobs.db_registry import KnownDbRegistry
+
+
+DEFAULT_DB_DIRNAME = "tmp_decelium_job_database"
+
+
+def default_db_path() -> str:
+    return os.path.join(Path.home(), DEFAULT_DB_DIRNAME)
+
+
+class JobDeleteRequest(BaseData):
+    job_id: str
+
+
+class JobDeleteDetails(BaseData):
+    status: (str, None)
+    schedule_ids: (list, [])
+
+
+class JobDeleteErrorData(BaseData):
+    code: str
+    job_id: str
+    message: str
+    details: (JobDeleteDetails, {})
+
+
+class JobDeleteResult(BaseData):
+    job_id: str
+    deleted: bool
+
+
+class JobDeleteError(Exception):
+    def __init__(self, error):
+        self.error = error if isinstance(error, JobDeleteErrorData) else JobDeleteErrorData(error)
+        super().__init__(self.error.message)
+
+    def __str__(self) -> str:
+        return f"{self.error.code}: {self.error.message} (job_id={self.error.job_id})"
 
 
 class Jobs:
@@ -33,14 +71,21 @@ class Jobs:
             os.makedirs(self.db_path, exist_ok=True)
         except Exception as e:
 
-            home = Path.home()
-            default_dir = os.path.join(home, "tmp_decelium_job_database")
+            default_dir = default_db_path()
             os.makedirs(default_dir, exist_ok=True)
             self.db_path = default_dir
             #print(f"Jobs.__init__ ({e}). DB jobs working in {self.db_path}")
         self.jobdb = JobDB(self.db_path)
         self.processes = Processes(self.jobdb, verbose)
         self._schedule_pump_lock = threading.Lock()
+        self._known_db_registry = KnownDbRegistry.from_home(default_db_path())
+
+    def _register_known_db_for_job_start(self) -> None:
+        try:
+            self._known_db_registry.register_from_job_start(self.db_path)
+        except Exception as ex:
+            if self.verbose:
+                print(f"[nodejobs] known-db registration skipped: {ex}")
 
     # === Streaming helpers (SSE + event model) ===
     class StreamEvent(BaseData):
@@ -84,6 +129,51 @@ class Jobs:
             return parsed
         raise ValueError(f"{field_name} must be datetime or ISO datetime string")
 
+    def _parse_interval_component(self, value, field_name: str):
+        if value is None:
+            return None
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise ValueError(f"{field_name} must be int when set")
+        if value < 0:
+            raise ValueError(f"{field_name} must be >= 0 when set")
+        return value
+
+    @staticmethod
+    def apply_tags_patch(existing_tags, tags_patch) -> dict:
+        current = {}
+        if isinstance(existing_tags, dict):
+            for key, val in existing_tags.items():
+                key_text = str(key or "").strip()
+                if not key_text:
+                    continue
+                if val is None:
+                    continue
+                val_text = str(val).strip()
+                if not val_text:
+                    continue
+                current[key_text] = val_text
+        if tags_patch is None:
+            return current
+        if not isinstance(tags_patch, dict):
+            raise ValueError("tags must be a dict when set")
+        for key, raw in tags_patch.items():
+            key_text = str(key or "").strip()
+            if not key_text:
+                continue
+            if raw is None:
+                current.pop(key_text, None)
+                continue
+            value_text = raw.strip() if isinstance(raw, str) else str(raw).strip()
+            if len(value_text) == 0:
+                current.pop(key_text, None)
+                continue
+            if value_text != key_text:
+                raise ValueError(
+                    f"tag value must equal key or be null/empty to delete: {key_text}"
+                )
+            current[key_text] = key_text
+        return current
+
     def __find(self, job_id: str):
         assert job_id is not None, "can only select by job_id"
         job = None
@@ -93,6 +183,30 @@ class Jobs:
         if len(jobs) > 0:
             job = list(jobs.values())[0]
         return job
+
+    def _resolve_launch_spec_for_job(self, job_id: str, cwd_override=None, envs_override=None):
+        job = self.__find(job_id)
+        if job is None:
+            raise ValueError(f"job_id '{job_id}' was not found")
+        rec = JobRecord(job)
+        command = rec.command
+        if isinstance(command, str):
+            command = [p for p in command.strip().split() if len(p) > 0]
+        if not isinstance(command, list) or len(command) == 0:
+            raise ValueError(f"job_id '{job_id}' has no runnable command")
+        command = [str(p).strip() for p in command if str(p).strip()]
+        if len(command) == 0:
+            raise ValueError(f"job_id '{job_id}' has no runnable command")
+
+        cwd = cwd_override
+        if not isinstance(cwd, str) or len(cwd.strip()) == 0:
+            cwd = rec.cwd
+        cwd = cwd.strip() if isinstance(cwd, str) and len(cwd.strip()) > 0 else None
+
+        envs = envs_override if isinstance(envs_override, dict) else rec.envs
+        if not isinstance(envs, dict):
+            envs = None
+        return command, cwd, envs
 
     def __log_paths(self, job_id: str) -> Tuple[str, str]:
         job = self.__find(job_id)
@@ -105,11 +219,76 @@ class Jobs:
         err = os.path.join(rec.logdir, f"{rec.logfile}_errors.txt")
         return std, err
 
-    def run(self, command: Union[str, List[str]], job_id: str, cwd: str = None,envs: dict = None):
-
+    def create_job(
+        self,
+        command: Union[str, List[str]],
+        job_id: str,
+        cwd: str = None,
+        envs: dict = None,
+        tags: dict = None,
+    ):
         assert len(job_id) > 0, " Job name too short"
+        if isinstance(command, str):
+            command = [p for p in command.strip().split() if len(p) > 0]
+        if not isinstance(command, list) or len(command) == 0:
+            raise ValueError("command must be a non-empty list or command string")
+        if not all(isinstance(p, str) and len(p.strip()) > 0 for p in command):
+            raise ValueError("command entries must be non-empty strings")
+        command = [p.strip() for p in command]
+        if envs is not None and not isinstance(envs, dict):
+            raise ValueError("envs must be a dict when set")
+        if self.__find(job_id) is not None:
+            raise ValueError(f"job already exists: {job_id}")
+        tags_map = self.apply_tags_patch(None, tags)
         if cwd is None:
             cwd = os.getcwd()
+        logdir = f"{self.db_path}/job_logs/"
+        os.makedirs(logdir, exist_ok=True)
+        logfile = job_id
+        record = JobRecord(
+            {
+                JobRecord.self_id: job_id,
+                JobRecord.last_pid: -1,
+                JobRecord.dirname: job_id,
+                JobRecord.cwd: cwd,
+                JobRecord.logdir: logdir,
+                JobRecord.logfile: logfile,
+                JobRecord.command: command,
+                JobRecord.envs: envs,
+                JobRecord.tags: tags_map,
+                JobRecord.status: JobRecord.Status.c_stopped,
+            }
+        )
+        self.jobdb.update_status(record)
+        return record
+
+    def run(
+        self,
+        command: Union[str, List[str]],
+        job_id: str,
+        cwd: str = None,
+        envs: dict = None,
+        tags: dict = None,
+    ):
+
+        assert len(job_id) > 0, " Job name too short"
+        if isinstance(command, str):
+            command = [p for p in command.strip().split() if len(p) > 0]
+        if not isinstance(command, list) or len(command) == 0:
+            raise ValueError("command must be a non-empty list or command string")
+        if not all(isinstance(p, str) and len(p.strip()) > 0 for p in command):
+            raise ValueError("command entries must be non-empty strings")
+        command = [p.strip() for p in command]
+        if envs is not None and not isinstance(envs, dict):
+            raise ValueError("envs must be a dict when set")
+        existing_job = self.__find(job_id)
+        existing_tags = None
+        if isinstance(existing_job, dict):
+            existing_tags = existing_job.get(JobRecord.tags)
+        tags_map = self.apply_tags_patch(existing_tags, tags)
+        if cwd is None:
+            cwd = os.getcwd()
+        self._register_known_db_for_job_start()
         logdir = f"{self.db_path}/job_logs/"
         os.makedirs(logdir, exist_ok=True)
 
@@ -123,21 +302,33 @@ class Jobs:
                     JobRecord.cwd: cwd,
                     JobRecord.logdir: logdir,
                     JobRecord.logfile: logfile,
+                    JobRecord.command: command,
+                    JobRecord.envs: envs,
+                    JobRecord.tags: tags_map,
                     JobRecord.status: JobRecord.Status.c_starting,
                 }
             )
         )
-        if command is str:
-            command = command.strip()
-            command = command.split(' ')
-        start_proc: subprocess.Popen = self.processes.run(
-            command=command,
-            job_id=job_id,
-            cwd=cwd,
-            logdir=logdir,
-            logfile=logfile,
-            envs = envs
-        )
+        try:
+            start_proc: subprocess.Popen = self.processes.run(
+                command=command,
+                job_id=job_id,
+                cwd=cwd,
+                logdir=logdir,
+                logfile=logfile,
+                envs=envs,
+            )
+        except Exception:
+            self.jobdb.update_status(
+                JobRecord(
+                    {
+                        JobRecord.self_id: job_id,
+                        JobRecord.status: JobRecord.Status.c_failed_start,
+                        JobRecord.last_pid: -1,
+                    }
+                )
+            )
+            raise
         cond = isinstance(start_proc, subprocess.Popen)
         assert cond, "Invalid process detected"
         time.sleep(0.5)
@@ -176,22 +367,44 @@ class Jobs:
             raise ValueError("schedule must be a dict")
         schedule_id = schedule.get(ScheduleRecord.schedule_id)
         job_id = schedule.get(ScheduleRecord.job_id)
-        command = schedule.get(ScheduleRecord.command)
         next_run_raw = schedule.get(ScheduleRecord.next_run_at)
         if not isinstance(schedule_id, str) or len(schedule_id.strip()) == 0:
             raise ValueError("schedule_id is required")
         if not isinstance(job_id, str) or len(job_id.strip()) == 0:
             raise ValueError("job_id is required")
-        if isinstance(command, str):
-            command = [p for p in command.strip().split(" ") if len(p) > 0]
-        if not isinstance(command, list) or len(command) == 0:
-            raise ValueError("command must be a non-empty list")
-        if not all(isinstance(p, str) and len(p) > 0 for p in command):
-            raise ValueError("command entries must be non-empty strings")
         next_run_at = self._parse_schedule_time(next_run_raw, ScheduleRecord.next_run_at)
-        interval_sec = schedule.get(ScheduleRecord.interval_sec)
-        if interval_sec is not None and (not isinstance(interval_sec, int) or interval_sec <= 0):
-            raise ValueError("interval_sec must be a positive int when set")
+        interval_days = self._parse_interval_component(
+            schedule.get(ScheduleRecord.interval_days),
+            ScheduleRecord.interval_days,
+        )
+        interval_hours = self._parse_interval_component(
+            schedule.get(ScheduleRecord.interval_hours),
+            ScheduleRecord.interval_hours,
+        )
+        interval_minutes = self._parse_interval_component(
+            schedule.get(ScheduleRecord.interval_minutes),
+            ScheduleRecord.interval_minutes,
+        )
+        interval_sec_component = self._parse_interval_component(
+            schedule.get(ScheduleRecord.interval_sec),
+            ScheduleRecord.interval_sec,
+        )
+        interval_components_provided = any(
+            v is not None for v in (interval_days, interval_hours, interval_minutes, interval_sec_component)
+        )
+        interval_total_sec = (
+            (interval_days or 0) * 86400
+            + (interval_hours or 0) * 3600
+            + (interval_minutes or 0) * 60
+            + (interval_sec_component or 0)
+        )
+        interval_sec = None
+        if interval_components_provided:
+            if interval_total_sec <= 0:
+                raise ValueError(
+                    "combined interval must be > 0 when interval_days/hours/minutes/sec are set"
+                )
+            interval_sec = interval_total_sec
         enabled = schedule.get(ScheduleRecord.enabled, True)
         if not isinstance(enabled, bool):
             raise ValueError("enabled must be bool")
@@ -203,28 +416,35 @@ class Jobs:
         envs = schedule.get(ScheduleRecord.envs)
         if envs is not None and not isinstance(envs, dict):
             raise ValueError("envs must be a dict when set")
+        tags = schedule.get(ScheduleRecord.tags)
+        existing_tags = None
+        existing_rows = self.jobdb.list_schedules({ScheduleFilter.schedule_id: schedule_id.strip()})
+        if schedule_id.strip() in existing_rows:
+            existing_tags = ScheduleRecord(existing_rows[schedule_id.strip()]).get(ScheduleRecord.tags)
+        tags_map = self.apply_tags_patch(existing_tags, tags)
         attempt_count = schedule.get(ScheduleRecord.attempt_count, 0)
         if not isinstance(attempt_count, int) or attempt_count < 0:
             raise ValueError("attempt_count must be a non-negative int")
         payload = {
             ScheduleRecord.schedule_id: schedule_id.strip(),
             ScheduleRecord.job_id: job_id.strip(),
-            ScheduleRecord.command: command,
             ScheduleRecord.next_run_at: next_run_at,
             ScheduleRecord.enabled: enabled,
             ScheduleRecord.attempt_count: attempt_count,
         }
-        if interval_sec is not None:
-            payload[ScheduleRecord.interval_sec] = interval_sec
-        if cwd is not None:
-            payload[ScheduleRecord.cwd] = cwd
-        if envs is not None:
-            payload[ScheduleRecord.envs] = envs
+        payload[ScheduleRecord.interval_sec] = interval_sec
+        payload[ScheduleRecord.interval_days] = interval_days
+        payload[ScheduleRecord.interval_hours] = interval_hours
+        payload[ScheduleRecord.interval_minutes] = interval_minutes
+        payload[ScheduleRecord.cwd] = cwd
+        payload[ScheduleRecord.envs] = envs
+        payload[ScheduleRecord.tags] = tags_map
         rec = ScheduleRecord(payload)
         self.jobdb.update_schedule(rec)
         return rec
 
     def list_schedules(self, filter=None) -> ScheduleRecordDict:
+        self._refresh_runtime_state_for_read()
         if filter is None:
             return self.jobdb.list_schedules()
         return self.jobdb.list_schedules(ScheduleFilter(filter))
@@ -233,6 +453,101 @@ class Jobs:
         if not isinstance(schedule_id, str) or len(schedule_id.strip()) == 0:
             raise ValueError("schedule_id is required")
         return self.jobdb.remove_schedule(schedule_id.strip())
+
+    def _raise_job_delete_error(self, code: str, job_id: str, message: str, details=None):
+        details_payload = details if isinstance(details, JobDeleteDetails) else JobDeleteDetails({})
+        raise JobDeleteError(
+            JobDeleteErrorData(
+                {
+                    JobDeleteErrorData.code: code,
+                    JobDeleteErrorData.job_id: job_id,
+                    JobDeleteErrorData.message: message,
+                    JobDeleteErrorData.details: details_payload,
+                }
+            )
+        )
+
+    def delete_job(self, job_id: str) -> JobDeleteResult:
+        request = JobDeleteRequest(
+            {
+                JobDeleteRequest.job_id: str(job_id or "").strip(),
+            }
+        )
+        target_job_id = request.job_id
+        if len(target_job_id) == 0:
+            self._raise_job_delete_error(
+                code="invalid_job_id",
+                job_id=target_job_id,
+                message="job_id is required",
+            )
+
+        found = self.__find(target_job_id)
+        if found is None:
+            self._raise_job_delete_error(
+                code="job_not_found",
+                job_id=target_job_id,
+                message="job does not exist",
+            )
+
+        rec = JobRecord(found)
+        if rec.status in (
+            JobRecord.Status.c_starting,
+            JobRecord.Status.c_running,
+            JobRecord.Status.c_stopping,
+        ):
+            self._raise_job_delete_error(
+                code="job_active",
+                job_id=target_job_id,
+                message="job cannot be deleted while running or pending",
+                details=JobDeleteDetails(
+                    {
+                        JobDeleteDetails.status: rec.status,
+                        JobDeleteDetails.schedule_ids: [],
+                    }
+                ),
+            )
+
+        schedules = self.jobdb.list_schedules(
+            ScheduleFilter(
+                {
+                    ScheduleFilter.job_id: target_job_id,
+                }
+            )
+        )
+        schedule_ids = []
+        for schedule_id in schedules.keys():
+            sid = str(schedule_id).strip()
+            if len(sid) > 0:
+                schedule_ids.append(sid)
+        schedule_ids.sort()
+        if len(schedule_ids) > 0:
+            self._raise_job_delete_error(
+                code="job_scheduled",
+                job_id=target_job_id,
+                message="job cannot be deleted while schedules reference it",
+                details=JobDeleteDetails(
+                    {
+                        JobDeleteDetails.status: None,
+                        JobDeleteDetails.schedule_ids: schedule_ids,
+                    }
+                ),
+            )
+
+        try:
+            self.jobdb.remove_job(target_job_id)
+        except Exception as ex:
+            self._raise_job_delete_error(
+                code="job_delete_failed",
+                job_id=target_job_id,
+                message=f"delete failed: {ex}",
+            )
+
+        return JobDeleteResult(
+            {
+                JobDeleteResult.job_id: target_job_id,
+                JobDeleteResult.deleted: True,
+            }
+        )
 
     def _active_job_ids(self):
         active_ids = set()
@@ -275,6 +590,11 @@ class Jobs:
                 try:
                     if sched.job_id in active_ids:
                         continue
+                    launch_command, launch_cwd, launch_envs = self._resolve_launch_spec_for_job(
+                        sched.job_id,
+                        sched.cwd,
+                        sched.envs,
+                    )
 
                     if recurring_sec is None:
                         reserved_enabled = False
@@ -286,8 +606,10 @@ class Jobs:
                     reserve_record = ScheduleRecord({
                         ScheduleRecord.schedule_id: sched.schedule_id,
                         ScheduleRecord.job_id: sched.job_id,
-                        ScheduleRecord.command: sched.command,
                         ScheduleRecord.next_run_at: reserved_next_run,
+                        ScheduleRecord.interval_days: sched.interval_days,
+                        ScheduleRecord.interval_hours: sched.interval_hours,
+                        ScheduleRecord.interval_minutes: sched.interval_minutes,
                         ScheduleRecord.interval_sec: sched.interval_sec,
                         ScheduleRecord.enabled: reserved_enabled,
                         ScheduleRecord.cwd: sched.cwd,
@@ -299,10 +621,10 @@ class Jobs:
                     self.jobdb.update_schedule(reserve_record)
 
                     launch_record = self.run(
-                        command=sched.command,
+                        command=launch_command,
                         job_id=sched.job_id,
-                        cwd=sched.cwd,
-                        envs=sched.envs,
+                        cwd=launch_cwd,
+                        envs=launch_envs,
                     )
                     launch_status = getattr(launch_record, "status", None)
                     if launch_status == JobRecord.Status.c_failed_start:
@@ -320,8 +642,10 @@ class Jobs:
                     failed_record = ScheduleRecord({
                         ScheduleRecord.schedule_id: sched.schedule_id,
                         ScheduleRecord.job_id: sched.job_id,
-                        ScheduleRecord.command: sched.command,
                         ScheduleRecord.next_run_at: failed_next_run,
+                        ScheduleRecord.interval_days: sched.interval_days,
+                        ScheduleRecord.interval_hours: sched.interval_hours,
+                        ScheduleRecord.interval_minutes: sched.interval_minutes,
                         ScheduleRecord.interval_sec: sched.interval_sec,
                         ScheduleRecord.enabled: True,
                         ScheduleRecord.cwd: sched.cwd,
@@ -477,6 +801,15 @@ class Jobs:
                                 }
                             )
                         )
+                    else:
+                        self.jobdb.update_status(
+                            JobRecord(
+                                {
+                                    JobRecord.self_id: job_id,
+                                    JobRecord.status: JobRecord.Status.c_stopped,
+                                }
+                            )
+                        )
                 else:
                     self.jobdb.update_status(
                         JobRecord(
@@ -487,14 +820,19 @@ class Jobs:
                         )
                     )
 
+    def _refresh_runtime_state_for_read(self) -> None:
+        # Keep read paths consistent: first reconcile process status,
+        # then run due schedules so returned data is current.
+        self._update_status()
+        self._run_due_schedules()
+
     def list_status(self, filter=None) -> JobRecordDict:
         # print(f"------------------- A {filter}")
         if filter is None:
             filter = {}
         filter = JobFilter(filter)
         # print(f"------------------- B {filter}")
-        self._update_status()
-        self._run_due_schedules()
+        self._refresh_runtime_state_for_read()
         # print(f"------------------- C {filter}")
         return JobRecordDict(self.jobdb.list_status(filter))
 

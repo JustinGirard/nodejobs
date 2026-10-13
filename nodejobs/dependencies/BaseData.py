@@ -7,6 +7,8 @@ import json
 import os
 import re
 import io
+import time
+import threading
 
 def auto_c(parameter_type):
     def decorator(func):
@@ -38,6 +40,59 @@ class BaseField:
 
 
 class BaseData(dict, metaclass=BaseDataMeta):
+    _timed_gate_next_allowed_ts = {}
+    _timed_gate_lock = threading.Lock()
+
+    @classmethod
+    def timed_gate_reserve_lock(cls, key: str, cooldown_s: float) -> bool:
+        gate_key = str(key or "").strip()
+        if not gate_key:
+            return True
+        try:
+            cooldown = float(cooldown_s)
+        except Exception:
+            cooldown = 0.0
+        if cooldown < 0:
+            cooldown = 0.0
+        now_ts = time.time()
+        lock = getattr(cls, "_timed_gate_lock", None)
+        if lock is None:
+            lock = threading.Lock()
+            cls._timed_gate_lock = lock
+        with lock:
+            gates = getattr(cls, "_timed_gate_next_allowed_ts", None)
+            if not isinstance(gates, dict):
+                gates = {}
+                cls._timed_gate_next_allowed_ts = gates
+            next_allowed = float(gates.get(gate_key) or 0.0)
+            if now_ts < next_allowed:
+                return False
+            gates[gate_key] = now_ts + cooldown
+            return True
+
+    @classmethod
+    def timed_gate_release_cooldown(cls, key: str, cooldown_s: float) -> None:
+        gate_key = str(key or "").strip()
+        if not gate_key:
+            return
+        try:
+            cooldown = float(cooldown_s)
+        except Exception:
+            cooldown = 0.0
+        if cooldown < 0:
+            cooldown = 0.0
+        now_ts = time.time()
+        lock = getattr(cls, "_timed_gate_lock", None)
+        if lock is None:
+            lock = threading.Lock()
+            cls._timed_gate_lock = lock
+        with lock:
+            gates = getattr(cls, "_timed_gate_next_allowed_ts", None)
+            if not isinstance(gates, dict):
+                gates = {}
+                cls._timed_gate_next_allowed_ts = gates
+            gates[gate_key] = now_ts + cooldown
+
     @classmethod
     @lru_cache(maxsize=None)
     def get_annotations(cls):

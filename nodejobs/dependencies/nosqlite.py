@@ -29,7 +29,7 @@ class jsonwithdate:
                     dct[k] = datetime.datetime.strptime(v, DATE_FORMAT_WITH_MS)
                 except ValueError:  # If the first format doesn't work, try the second one
                     import traceback as tb
-                    tb.print_exc()
+                    # tb.print_exc()
                     try:
                         dct[k] = datetime.datetime.strptime(v, DATE_FORMAT)
                     except ValueError:
@@ -592,7 +592,9 @@ class nosqlite():
     def merge_dicts(self, d1, d2):
         """Recursively merge two dictionaries."""
         for k, v in d2.items():
-            if isinstance(v, dict) and k in d1 and isinstance(d1[k], dict):
+            if k == "tags" and isinstance(v, dict):
+                d1[k] = dict(v)
+            elif isinstance(v, dict) and k in d1 and isinstance(d1[k], dict):
                 d1[k] = self.merge_dicts(d1[k], v)
             else:
                 d1[k] = v

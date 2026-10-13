@@ -281,3 +281,38 @@ The `Jobs` class now exposes first-class schedule management APIs.
   - `last_error` is set on launch failures
   - `attempt_count` increments per launch attempt
   - one-shot failures are re-enabled with retry delay; recurring schedules stay interval-based
+
+### BaseService wrappers (`JobsService`, `SchedulesService`, `NJService`)
+
+The repository also includes BaseService wrappers over `Jobs`:
+- `nodejobs/jobs_service.py` (`run`, `stop`, `status`, `list`, `logs`)
+- `nodejobs/schedules_service.py` (`set`, `list`, `remove`)
+- `nodejobs/nj.py` (router command `nj` with `service=<jobs|schedules>` and `op=<command>`)
+- `nodejobs/nj.py` also exposes `build` directly for internal macOS app packaging.
+
+Direct examples:
+
+```bash
+python3 nodejobs/jobs_service.py list
+python3 nodejobs/jobs_service.py run job_id=my_job command.1=python command.2=-c command.3='print("hi")'
+python3 nodejobs/schedules_service.py set schedule.schedule_id=s1 schedule.job_id=my_job schedule.command.1=python schedule.command.2=-c schedule.command.3='print("scheduled")' schedule.next_run_at=2026-08-05T00:00:00
+python3 nodejobs/nj.py build
+```
+
+Routed examples:
+
+```bash
+python3 nodejobs/nj.py nj service=jobs op=status job_id=my_job
+python3 nodejobs/nj.py nj service=schedules op=list
+python3 nodejobs/nj.py nj service=admin op=build
+```
+
+JSON-file call techniques:
+
+```bash
+python3 nodejobs/nj.py nj service=schedules op=set schedule=[[schedule_payload.json]]
+python3 nodejobs/nj.py nj [[bulk]]=[[nj_route_payload.json]]
+```
+
+Collision precedence note:
+- If `[[bulk]]` JSON merge provides keys that already exist in parsed args, merged JSON values overwrite existing values (inherited from `BaseService._expand_message_json`).

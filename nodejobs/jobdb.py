@@ -27,6 +27,9 @@ class JobRecord(BaseData):
     cwd: (str, None)
     logdir: (str, None)
     logfile: (str, None)
+    command: (list, None)
+    envs: (dict, None)
+    tags: (dict, None)
 
     class Status:
         c_stopping = "stopping"
@@ -53,17 +56,21 @@ class JobFilter(BaseData):
     status: (str, None)
     cwd: (str, None)
     last_update: (datetime.datetime, None)
+    tags: (dict, None)
 
 
 class ScheduleRecord(BaseData):
     schedule_id: str
     job_id: str
-    command: list
     next_run_at: datetime.datetime
+    interval_days: (int, None)
+    interval_hours: (int, None)
+    interval_minutes: (int, None)
     interval_sec: (int, None)
     enabled: (bool, True)
     cwd: (str, None)
     envs: (dict, None)
+    tags: (dict, None)
     last_run_at: (datetime.datetime, None)
     last_error: (str, None)
     attempt_count: (int, 0)
@@ -74,6 +81,7 @@ class ScheduleFilter(BaseData):
     job_id: (str, None)
     enabled: (bool, None)
     next_run_at: (datetime.datetime, None)
+    tags: (dict, None)
 
 
 class ScheduleRecordDict(BaseData):
@@ -112,6 +120,29 @@ class JobDB:
         # print(f"USING JOB DB AT {self.db_path}")
         self.jobdb = nosqlite(str(self.db_path))
 
+    @staticmethod
+    def _coerce_tags(value) -> dict:
+        if not isinstance(value, dict):
+            return {}
+        out = {}
+        for key, val in value.items():
+            key_text = str(key or "").strip()
+            val_text = str(val or "").strip()
+            if key_text and val_text:
+                out[key_text] = val_text
+        return out
+
+    @classmethod
+    def _tags_match(cls, record_tags, required_tags) -> bool:
+        required = cls._coerce_tags(required_tags)
+        if len(required) == 0:
+            return True
+        actual = cls._coerce_tags(record_tags)
+        for key, val in required.items():
+            if actual.get(key) != val:
+                return False
+        return True
+
     def update_status(self, job):
         """
         Upsert (insert or update) a job record into the “process_status” table.
@@ -137,6 +168,17 @@ class JobDB:
               (often the new record’s ID or a status code).
         """
         clean_job = JobRecord(job).clean()
+        job_id = clean_job.get(JobFilter.self_id)
+        existing_rows = self.list_status({JobFilter.self_id: job_id})
+        if job_id in existing_rows:
+            merged_job = dict(JobRecord(existing_rows[job_id]).clean())
+            merged_job.update(clean_job)
+            clean_job = JobRecord(merged_job).clean()
+        else:
+            command_val = clean_job.get(JobRecord.command)
+            has_runnable_command = isinstance(command_val, list) and len(command_val) > 0
+            if not has_runnable_command:
+                return False
         pid = os.getpid()
         # print(f"UPERST LOG pid={pid}")
         resp = self.jobdb.execute(
@@ -243,8 +285,12 @@ class JobDB:
         """
         if filter is None:
             clean_filter = {}
+            required_tags = None
         else:
             clean_filter = JobFilter(filter, trim=True)
+            required_tags = clean_filter.get(JobFilter.tags)
+            if JobFilter.tags in clean_filter:
+                del clean_filter[JobFilter.tags]
         # print(f"clean_filter -----> {clean_filter}")
         resp = self.jobdb.execute(
             qtype="find",
@@ -262,8 +308,24 @@ class JobDB:
             j = JobRecord(
                 j
             )
+            if not self._tags_match(j.get(JobRecord.tags), required_tags):
+                continue
             jobs_by_id[j.self_id] = j
         return JobRecordDict(jobs_by_id)
+
+    def remove_job(self, job_id: str):
+        if not isinstance(job_id, str) or len(job_id.strip()) == 0:
+            raise Exception("job_id cant be empty")
+        resp = self.jobdb.execute(
+            qtype="delete",
+            source="process_status",
+            filterval={JobFilter.self_id: job_id.strip()},
+            setval=None,
+            limit=None,
+            offset=None,
+            field=None,
+        )
+        return resp
 
     def update_schedule(self, schedule):
         clean_schedule = ScheduleRecord(schedule).clean()
@@ -282,8 +344,12 @@ class JobDB:
     def list_schedules(self, filter=None):
         if filter is None:
             clean_filter = {}
+            required_tags = None
         else:
             clean_filter = ScheduleFilter(filter, trim=True)
+            required_tags = clean_filter.get(ScheduleFilter.tags)
+            if ScheduleFilter.tags in clean_filter:
+                del clean_filter[ScheduleFilter.tags]
         resp = self.jobdb.execute(
             qtype="find",
             source="job_schedule",
@@ -298,6 +364,8 @@ class JobDB:
         schedules_by_id = {}
         for s in resp:
             rec = ScheduleRecord(s)
+            if not self._tags_match(rec.get(ScheduleRecord.tags), required_tags):
+                continue
             schedules_by_id[rec.schedule_id] = rec
         return ScheduleRecordDict(schedules_by_id)
 

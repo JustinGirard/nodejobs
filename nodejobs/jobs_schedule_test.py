@@ -43,6 +43,18 @@ class TestJobsScheduling(unittest.TestCase):
         rows = self.jobs.jobdb.list_status({JobFilter.self_id: job_id})
         return job_id in rows
 
+    def _has_launch_artifacts_for(self, jobs_mgr: Jobs, job_id: str) -> bool:
+        rows = jobs_mgr.jobdb.list_status({JobFilter.self_id: job_id})
+        if job_id not in rows:
+            return False
+        rec = JobRecord(rows[job_id])
+        logdir = str(rec.logdir or "").strip()
+        logfile = str(rec.logfile or "").strip()
+        return bool(logdir and logfile)
+
+    def _has_launch_artifacts(self, job_id: str) -> bool:
+        return self._has_launch_artifacts_for(self.jobs, job_id)
+
     def _get_status(self, job_id: str):
         rows = self.jobs.jobdb.list_status({JobFilter.self_id: job_id})
         if job_id not in rows:
@@ -75,29 +87,42 @@ class TestJobsScheduling(unittest.TestCase):
             stop_res = self.jobs.stop(job_id=job_id, wait_time=1)
             dprint(f"PROOF stop_if_active: job_id={job_id!r} stop_status={getattr(stop_res, 'status', None)!r}")
 
+    def _seed_job_launch_spec(self, job_id: str, command: list[str]):
+        self.jobs.jobdb.update_status(
+            JobRecord(
+                {
+                    JobRecord.self_id: job_id,
+                    JobRecord.status: JobRecord.Status.c_finished,
+                    JobRecord.command: command,
+                }
+            )
+        )
+        dprint(f"PROOF seed_job_launch_spec: job_id={job_id!r} command={command!r}")
+
     def test_one_shot_due_now_launches_on_pump(self):
         schedule_id = "sched_one_shot_due_now"
         job_id = "sched_one_shot_job"
         now_at = _dt.datetime.now(_dt.timezone.utc).replace(tzinfo=None)
+        launch_command = [
+            sys.executable,
+            "-u",
+            "-c",
+            "import time; print('start', flush=True); time.sleep(1.2); print('done', flush=True)",
+        ]
+        self._seed_job_launch_spec(job_id, launch_command)
 
         self.jobs.set_schedule({
             ScheduleRecord.schedule_id: schedule_id,
             ScheduleRecord.job_id: job_id,
-            ScheduleRecord.command: [
-                sys.executable,
-                "-u",
-                "-c",
-                "import time; print('start', flush=True); time.sleep(1.2); print('done', flush=True)",
-            ],
             ScheduleRecord.next_run_at: now_at,
             ScheduleRecord.enabled: True,
         })
         dprint(f"PROOF set_schedule one_shot: schedule_id={schedule_id!r} job_id={job_id!r}")
 
-        self.assertFalse(self._status_exists(job_id), "Job status should not exist before pump")
+        self.assertFalse(self._has_launch_artifacts(job_id), "Job should not have launch artifacts before pump")
 
         self.jobs.list_status()
-        launched = self._wait_until("one_shot_launched", lambda: self._status_exists(job_id), timeout=6.0)
+        launched = self._wait_until("one_shot_launched", lambda: self._has_launch_artifacts(job_id), timeout=6.0)
         self.assertTrue(launched, "Expected one-shot schedule to launch on pump")
 
         sched = self._get_schedule(schedule_id)
@@ -115,16 +140,17 @@ class TestJobsScheduling(unittest.TestCase):
         schedule_id = "sched_recurring_overlap"
         job_id = "sched_recurring_job"
         now_at = _dt.datetime.now(_dt.timezone.utc).replace(tzinfo=None)
+        launch_command = [
+            sys.executable,
+            "-u",
+            "-c",
+            "import time; print('loop-start', flush=True); time.sleep(1.5)",
+        ]
+        self._seed_job_launch_spec(job_id, launch_command)
 
         self.jobs.set_schedule({
             ScheduleRecord.schedule_id: schedule_id,
             ScheduleRecord.job_id: job_id,
-            ScheduleRecord.command: [
-                sys.executable,
-                "-u",
-                "-c",
-                "import time; print('loop-start', flush=True); time.sleep(1.5)",
-            ],
             ScheduleRecord.next_run_at: now_at,
             ScheduleRecord.interval_sec: 1,
             ScheduleRecord.enabled: True,
@@ -170,11 +196,12 @@ class TestJobsScheduling(unittest.TestCase):
         schedule_id = "sched_remove_before_pump"
         job_id = "sched_removed_job"
         now_at = _dt.datetime.now(_dt.timezone.utc).replace(tzinfo=None)
+        launch_command = [sys.executable, "-u", "-c", "import time; time.sleep(1)"]
+        self._seed_job_launch_spec(job_id, launch_command)
 
         self.jobs.set_schedule({
             ScheduleRecord.schedule_id: schedule_id,
             ScheduleRecord.job_id: job_id,
-            ScheduleRecord.command: [sys.executable, "-u", "-c", "import time; time.sleep(1)"],
             ScheduleRecord.next_run_at: now_at,
             ScheduleRecord.enabled: True,
         })
@@ -188,18 +215,19 @@ class TestJobsScheduling(unittest.TestCase):
             self.jobs.list_status()
             time.sleep(0.05)
 
-        self.assertFalse(self._status_exists(job_id), "Removed schedule should not launch job")
+        self.assertFalse(self._has_launch_artifacts(job_id), "Removed schedule should not launch job")
         self.assertIsNone(self.jobs.processes.find(job_id), "Removed schedule should not create wrapper process")
 
     def test_failed_start_sets_error_and_backoff(self):
         schedule_id = "sched_fail_backoff"
         job_id = "sched_fail_job"
         now_at = _dt.datetime.now(_dt.timezone.utc).replace(tzinfo=None)
+        launch_command = ["__definitely_missing_binary__"]
+        self._seed_job_launch_spec(job_id, launch_command)
 
         self.jobs.set_schedule({
             ScheduleRecord.schedule_id: schedule_id,
             ScheduleRecord.job_id: job_id,
-            ScheduleRecord.command: ["__definitely_missing_binary__"],
             ScheduleRecord.next_run_at: now_at,
             ScheduleRecord.enabled: True,
         })
@@ -240,29 +268,26 @@ class TestJobsScheduling(unittest.TestCase):
         schedule_id = "sched_get_status_trigger"
         job_id = "sched_get_status_job"
         now_at = _dt.datetime.now(_dt.timezone.utc).replace(tzinfo=None)
+        launch_command = [
+            sys.executable,
+            "-u",
+            "-c",
+            "import time; print('gs', flush=True); time.sleep(1.0)",
+        ]
+        self._seed_job_launch_spec(job_id, launch_command)
 
         self.jobs.set_schedule({
             ScheduleRecord.schedule_id: schedule_id,
             ScheduleRecord.job_id: job_id,
-            ScheduleRecord.command: [
-                sys.executable,
-                "-u",
-                "-c",
-                "import time; print('gs', flush=True); time.sleep(1.0)",
-            ],
             ScheduleRecord.next_run_at: now_at,
             ScheduleRecord.enabled: True,
         })
-        self.assertFalse(self._status_exists(job_id), "Job should not exist before first pump")
+        self.assertFalse(self._has_launch_artifacts(job_id), "Job should not have launch artifacts before first pump")
 
         rec = self.jobs.get_status(job_id)
         dprint(f"PROOF get_status_trigger: initial_rec_exists={rec is not None}")
 
-        launched = self._wait_until(
-            "get_status_due_launch",
-            lambda: self._status_exists(job_id),
-            timeout=6.0,
-        )
+        launched = self._wait_until("get_status_due_launch", lambda: self._has_launch_artifacts(job_id), timeout=6.0)
         self.assertTrue(launched, "Expected due schedule to launch via get_status pump path")
 
         sched = self._get_schedule(schedule_id)
@@ -278,28 +303,32 @@ class TestJobsScheduling(unittest.TestCase):
         schedule_id = "sched_restart_persist"
         job_id = "sched_restart_job"
         now_at = _dt.datetime.now(_dt.timezone.utc).replace(tzinfo=None)
+        launch_command = [
+            sys.executable,
+            "-u",
+            "-c",
+            "import time; print('persist', flush=True); time.sleep(1.0)",
+        ]
+        self._seed_job_launch_spec(job_id, launch_command)
 
         self.jobs.set_schedule({
             ScheduleRecord.schedule_id: schedule_id,
             ScheduleRecord.job_id: job_id,
-            ScheduleRecord.command: [
-                sys.executable,
-                "-u",
-                "-c",
-                "import time; print('persist', flush=True); time.sleep(1.0)",
-            ],
             ScheduleRecord.next_run_at: now_at,
             ScheduleRecord.enabled: True,
         })
 
         jobs2 = Jobs(db_path=self.data_dir, verbose=False)
-        self.assertNotIn(job_id, jobs2.jobdb.list_status({JobFilter.self_id: job_id}))
+        self.assertFalse(
+            self._has_launch_artifacts_for(jobs2, job_id),
+            "Seeded job row may exist, but should not have launch artifacts before pump",
+        )
 
         launched = False
         deadline = time.time() + 8.0
         while time.time() < deadline:
             jobs2.list_status()
-            if job_id in jobs2.jobdb.list_status({JobFilter.self_id: job_id}):
+            if self._has_launch_artifacts_for(jobs2, job_id):
                 launched = True
                 break
             time.sleep(0.1)
@@ -324,15 +353,16 @@ class TestJobsScheduling(unittest.TestCase):
         schedule_b = "sched_same_job_b"
         job_id = "sched_same_job_target"
         now_at = _dt.datetime.now(_dt.timezone.utc).replace(tzinfo=None)
+        launch_command = [
+            sys.executable,
+            "-u",
+            "-c",
+            "import time; print('same-job', flush=True); time.sleep(2.0)",
+        ]
+        self._seed_job_launch_spec(job_id, launch_command)
 
         common = {
             ScheduleRecord.job_id: job_id,
-            ScheduleRecord.command: [
-                sys.executable,
-                "-u",
-                "-c",
-                "import time; print('same-job', flush=True); time.sleep(2.0)",
-            ],
             ScheduleRecord.next_run_at: now_at,
             ScheduleRecord.enabled: True,
         }
@@ -362,16 +392,17 @@ class TestJobsScheduling(unittest.TestCase):
         schedule_id = "sched_concurrent_pump"
         job_id = "sched_concurrent_job"
         now_at = _dt.datetime.now(_dt.timezone.utc).replace(tzinfo=None)
+        launch_command = [
+            sys.executable,
+            "-u",
+            "-c",
+            "import time; print('concurrent', flush=True); time.sleep(2.0)",
+        ]
+        self._seed_job_launch_spec(job_id, launch_command)
 
         self.jobs.set_schedule({
             ScheduleRecord.schedule_id: schedule_id,
             ScheduleRecord.job_id: job_id,
-            ScheduleRecord.command: [
-                sys.executable,
-                "-u",
-                "-c",
-                "import time; print('concurrent', flush=True); time.sleep(2.0)",
-            ],
             ScheduleRecord.next_run_at: now_at,
             ScheduleRecord.enabled: True,
         })
@@ -415,6 +446,104 @@ class TestJobsScheduling(unittest.TestCase):
             "Should not have multiple run_job wrappers for the same job_id",
         )
         self._stop_if_active(job_id)
+
+    def test_schedule_tags_roundtrip_and_subset_filtering(self):
+        schedule_a = "sched_tags_a"
+        schedule_b = "sched_tags_b"
+        now_at = (_dt.datetime.now(_dt.timezone.utc) + _dt.timedelta(minutes=5)).replace(tzinfo=None)
+
+        self.jobs.set_schedule({
+            ScheduleRecord.schedule_id: schedule_a,
+            ScheduleRecord.job_id: "sched_tags_job_a",
+            ScheduleRecord.next_run_at: now_at,
+            ScheduleRecord.enabled: True,
+            ScheduleRecord.tags: {"team": "team", "env": "env"},
+        })
+        self.jobs.set_schedule({
+            ScheduleRecord.schedule_id: schedule_b,
+            ScheduleRecord.job_id: "sched_tags_job_b",
+            ScheduleRecord.next_run_at: now_at,
+            ScheduleRecord.enabled: True,
+            ScheduleRecord.tags: {"team": "team"},
+        })
+
+        all_rows = self.jobs.list_schedules()
+        self.assertIn(schedule_a, all_rows)
+        self.assertIn(schedule_b, all_rows)
+        self.assertEqual(ScheduleRecord(all_rows[schedule_a]).tags, {"team": "team", "env": "env"})
+        self.assertEqual(ScheduleRecord(all_rows[schedule_b]).tags, {"team": "team"})
+
+        team_matches = self.jobs.list_schedules(filter={ScheduleRecord.tags: {"team": "team"}})
+        self.assertIn(schedule_a, team_matches)
+        self.assertIn(schedule_b, team_matches)
+
+        strict_matches = self.jobs.list_schedules(
+            filter={ScheduleRecord.tags: {"team": "team", "env": "env"}}
+        )
+        self.assertIn(schedule_a, strict_matches)
+        self.assertNotIn(schedule_b, strict_matches)
+
+        missing_matches = self.jobs.list_schedules(filter={ScheduleRecord.tags: {"missing": "missing"}})
+        self.assertEqual(len(missing_matches), 0)
+
+    def test_schedule_tags_patch_preserve_and_remove(self):
+        schedule_id = "sched_tags_clear"
+        now_at = (_dt.datetime.now(_dt.timezone.utc) + _dt.timedelta(minutes=5)).replace(tzinfo=None)
+
+        self.jobs.set_schedule({
+            ScheduleRecord.schedule_id: schedule_id,
+            ScheduleRecord.job_id: "sched_tags_clear_job",
+            ScheduleRecord.next_run_at: now_at,
+            ScheduleRecord.enabled: True,
+            ScheduleRecord.tags: {"team": "team", "env": "env"},
+        })
+        before = self._get_schedule(schedule_id)
+        self.assertTrue(bool(before.tags))
+
+        self.jobs.set_schedule({
+            ScheduleRecord.schedule_id: schedule_id,
+            ScheduleRecord.job_id: "sched_tags_clear_job",
+            ScheduleRecord.next_run_at: now_at,
+            ScheduleRecord.enabled: True,
+            ScheduleRecord.tags: {},
+        })
+        after_preserve = self._get_schedule(schedule_id)
+        self.assertEqual(after_preserve.tags, {"team": "team", "env": "env"})
+
+        self.jobs.set_schedule({
+            ScheduleRecord.schedule_id: schedule_id,
+            ScheduleRecord.job_id: "sched_tags_clear_job",
+            ScheduleRecord.next_run_at: now_at,
+            ScheduleRecord.enabled: True,
+            ScheduleRecord.tags: {"env": ""},
+        })
+        after_remove_one = self._get_schedule(schedule_id)
+        self.assertEqual(after_remove_one.tags, {"team": "team"})
+
+        self.jobs.set_schedule({
+            ScheduleRecord.schedule_id: schedule_id,
+            ScheduleRecord.job_id: "sched_tags_clear_job",
+            ScheduleRecord.next_run_at: now_at,
+            ScheduleRecord.enabled: True,
+            ScheduleRecord.tags: {"team": None},
+        })
+        after_remove_all = self._get_schedule(schedule_id)
+        self.assertFalse(bool(after_remove_all.tags))
+
+        team_matches = self.jobs.list_schedules(filter={ScheduleRecord.tags: {"team": "team"}})
+        self.assertNotIn(schedule_id, team_matches)
+
+    def test_schedule_tags_patch_rejects_mismatched_values(self):
+        schedule_id = "sched_tags_bad"
+        now_at = (_dt.datetime.now(_dt.timezone.utc) + _dt.timedelta(minutes=5)).replace(tzinfo=None)
+        with self.assertRaises(ValueError):
+            self.jobs.set_schedule({
+                ScheduleRecord.schedule_id: schedule_id,
+                ScheduleRecord.job_id: "sched_tags_bad_job",
+                ScheduleRecord.next_run_at: now_at,
+                ScheduleRecord.enabled: True,
+                ScheduleRecord.tags: {"team": "ops"},
+            })
 
 
 if __name__ == "__main__":

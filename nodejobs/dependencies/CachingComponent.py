@@ -86,6 +86,39 @@ class CachingComponent(BaseData):
         self._guard_direct_use()
         return CachingComponent.tCommandMap({})
 
+    def run(self, **kwargs):
+        self._guard_direct_use()
+        command_map = self.get_command_map()
+        if not isinstance(command_map, dict):
+            command_map = {}
+        command_map = dict(command_map)
+        command_map["media_fetch"] = {
+            "required_args": ["path"],
+            "method": self.media_fetch,
+        }
+
+        assert "__command" in kwargs, f"Need at least one command. Allowed: {list(command_map.keys())}"
+        assert len(kwargs["__command"]) == 1, f"Exactly one command must be specified: {kwargs['__command']}"
+        cmd = kwargs["__command"][0]
+        if cmd not in command_map:
+            raise ValueError(f"Unknown command: {cmd}")
+
+        command_info = command_map[cmd]
+        required_args = command_info.get("required_args", [])
+        method = command_info["method"]
+        for arg in required_args:
+            assert arg in kwargs, f"Missing required argument: {arg} for command {cmd}()"
+
+        del kwargs["__command"]
+        method_name = getattr(method, "__name__", None)
+        if isinstance(method_name, str):
+            bound = getattr(self, method_name, None)
+            if callable(bound):
+                method = bound
+        if not callable(method):
+            raise TypeError(f"Command '{cmd}' method is not callable")
+        return method(**kwargs)
+
     def media_fetch(self, path: str):
         self._guard_direct_use()
         if path is None: raise Exception("media requires args.path")

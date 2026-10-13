@@ -1,9 +1,12 @@
+import datetime as _dt
 import sys
 import time
 import unittest
 import shutil
 import psutil
-from nodejobs.jobs import Jobs
+from nodejobs.jobs import JobDeleteError, Jobs
+from nodejobs.jobdb import ScheduleRecord
+from nodejobs.ui.adapters import JobsAdapter
 
 
 class TestJobsBlackBox(unittest.TestCase):
@@ -14,6 +17,7 @@ class TestJobsBlackBox(unittest.TestCase):
         except FileNotFoundError:
             pass
         self.jobs = Jobs(db_path=data_dir)
+        self.jobs_adapter = JobsAdapter(self.jobs)
 
     def tearDown(self):
         # Restore HOME and clean up
@@ -34,6 +38,58 @@ class TestJobsBlackBox(unittest.TestCase):
                 return True
             time.sleep(1)
         return False
+
+    def _seed_stopped_job(self, job_id: str):
+        self.jobs.jobdb.update_status(
+            {
+                "self_id": job_id,
+                "status": "stopped",
+                "command": ["echo", "ok"],
+            }
+        )
+
+    def _read_tags(self, rec):
+        if rec is None:
+            return None
+        if isinstance(rec, dict):
+            return rec.get("tags")
+        try:
+            return rec["tags"]
+        except Exception:
+            return getattr(rec, "tags", None)
+
+    def test_create_job_draft_without_running_core_api(self):
+        job_id = "core_create_job"
+        command = ["echo", "ok"]
+        tags = {"dev": "dev"}
+
+        rec = self.jobs.create_job(
+            command=command,
+            job_id=job_id,
+            cwd=None,
+            envs={},
+            tags=tags,
+        )
+        self.assertEqual(rec["self_id"], job_id)
+        self.assertEqual(rec["status"], "stopped")
+        self.assertEqual(rec["last_pid"], -1)
+        self.assertEqual(rec["command"], command)
+        self.assertEqual(rec["tags"], tags)
+        persisted = self.jobs.get_status(job_id=job_id)
+        self.assertEqual(persisted["status"], "stopped")
+
+    def test_create_job_rejects_duplicate_core_api(self):
+        job_id = "core_create_job_dup"
+        self.jobs.create_job(
+            command=["echo", "ok"],
+            job_id=job_id,
+            cwd=None,
+            envs={},
+            tags={"dev": "dev"},
+        )
+        with self.assertRaises(ValueError) as ctx:
+            self.jobs.create_job(command=["echo", "ok"], job_id=job_id)
+        self.assertIn("job already exists", str(ctx.exception))
 
     def test_run_to_finished(self):
         # 1. run “sleep 1” job → expect “running” → then “finished”
@@ -158,6 +214,101 @@ class TestJobsBlackBox(unittest.TestCase):
 
         self.assertTrue(finished_b, "Job a did not finish in time")
 
+    def test_job_tags_patch_add_preserve_and_remove_via_draft_endpoints(self):
+        job_id = "tags_draft_job"
+        initial_tags = {"team": "team", "prod": "prod"}
+        self.jobs_adapter.create_job_draft(
+            command=["echo", "ok"],
+            job_id=job_id,
+            cwd=None,
+            envs={},
+            tags=initial_tags,
+        )
+
+        rec = self.jobs.get_status(job_id=job_id)
+        self.assertIsNotNone(rec)
+        self.assertEqual(self._read_tags(rec), initial_tags)
+
+        self.jobs_adapter.upsert_job_draft(
+            command=["echo", "ok"],
+            job_id=job_id,
+            cwd=None,
+            envs={},
+            tags={},
+            status="stopped",
+        )
+        rec2 = self.jobs.get_status(job_id=job_id)
+        self.assertIsNotNone(rec2)
+        self.assertEqual(self._read_tags(rec2), initial_tags)
+
+        self.jobs_adapter.upsert_job_draft(
+            command=["echo", "ok"],
+            job_id=job_id,
+            cwd=None,
+            envs={},
+            tags={"prod": ""},
+            status="stopped",
+        )
+        rec3 = self.jobs.get_status(job_id=job_id)
+        self.assertIsNotNone(rec3)
+        self.assertEqual(self._read_tags(rec3), {"team": "team"})
+
+        self.jobs_adapter.upsert_job_draft(
+            command=["echo", "ok"],
+            job_id=job_id,
+            cwd=None,
+            envs={},
+            tags={"team": None},
+            status="stopped",
+        )
+        rec4 = self.jobs.get_status(job_id=job_id)
+        self.assertIsNotNone(rec4)
+        self.assertFalse(bool(self._read_tags(rec4)))
+
+    def test_job_tags_patch_rejects_mismatched_values(self):
+        with self.assertRaises(ValueError):
+            self.jobs_adapter.create_job_draft(
+                command=["echo", "ok"],
+                job_id="tags_bad_value_job",
+                cwd=None,
+                envs={},
+                tags={"prod": "production"},
+            )
+
+    def test_list_status_filtering_by_tags_subset(self):
+        job_a = "tags_filter_a"
+        job_b = "tags_filter_b"
+        job_c = "tags_filter_c"
+
+        self.jobs_adapter.create_job_draft(
+            command=["echo", "a"],
+            job_id=job_a,
+            tags={"team": "team", "env": "env"},
+        )
+        self.jobs_adapter.create_job_draft(
+            command=["echo", "b"],
+            job_id=job_b,
+            tags={"team": "team"},
+        )
+        self.jobs_adapter.create_job_draft(
+            command=["echo", "c"],
+            job_id=job_c,
+            tags={"other": "other"},
+        )
+
+        team_matches = self.jobs.list_status(filter={"tags": {"team": "team"}})
+        self.assertIn(job_a, team_matches)
+        self.assertIn(job_b, team_matches)
+        self.assertNotIn(job_c, team_matches)
+
+        strict_matches = self.jobs.list_status(filter={"tags": {"team": "team", "env": "env"}})
+        self.assertIn(job_a, strict_matches)
+        self.assertNotIn(job_b, strict_matches)
+        self.assertNotIn(job_c, strict_matches)
+
+        missing_matches = self.jobs.list_status(filter={"tags": {"missing": "missing"}})
+        self.assertEqual(len(missing_matches), 0)
+
     def test_start_and_stop_npm_run_start(self):
         npm_project_dir = "/Users/computercomputer/justinops/projects/portfolio"  # TODO: set this
         job_id = "npm_run_start_test"
@@ -191,9 +342,59 @@ class TestJobsBlackBox(unittest.TestCase):
         self.assertIn(job_id, all_jobs)
         self.assertNotEqual(all_jobs[job_id]["status"], "running")
 
+    def test_delete_stopped_unscheduled_job(self):
+        job_id = "delete_ok_job"
+        self._seed_stopped_job(job_id)
+        result = self.jobs.delete_job(job_id)
+        self.assertTrue(result["deleted"])
+        self.assertEqual(result["job_id"], job_id)
+        rows = self.jobs.list_status()
+        self.assertNotIn(job_id, rows)
+
+    def test_delete_running_job_blocked(self):
+        job_id = "delete_block_running"
+        run_res = self.jobs.run(command=["bash", "-c", "sleep 5"], job_id=job_id)
+        self.assertIn(run_res["status"], ("running", "finished", "failed_start"))
+        try:
+            with self.assertRaises(JobDeleteError) as ctx:
+                self.jobs.delete_job(job_id)
+            err = ctx.exception
+            self.assertEqual(err.error.code, "job_active")
+            self.assertEqual(err.error.job_id, job_id)
+            self.assertTrue(err.error.details.status in ("starting", "running", "stopping"))
+        finally:
+            self.jobs.stop(job_id=job_id)
+
+    def test_delete_scheduled_job_blocked(self):
+        job_id = "delete_block_scheduled"
+        schedule_id = "sched_delete_block"
+        self._seed_stopped_job(job_id)
+        self.jobs.set_schedule(
+            {
+                ScheduleRecord.schedule_id: schedule_id,
+                ScheduleRecord.job_id: job_id,
+                ScheduleRecord.next_run_at: _dt.datetime.now(_dt.timezone.utc)
+                + _dt.timedelta(minutes=5),
+                ScheduleRecord.enabled: True,
+            }
+        )
+        with self.assertRaises(JobDeleteError) as ctx:
+            self.jobs.delete_job(job_id)
+        err = ctx.exception
+        self.assertEqual(err.error.code, "job_scheduled")
+        self.assertEqual(err.error.job_id, job_id)
+        self.assertIn(schedule_id, err.error.details.schedule_ids)
+
+    def test_delete_missing_job_blocked(self):
+        with self.assertRaises(JobDeleteError) as ctx:
+            self.jobs.delete_job("job_that_does_not_exist")
+        err = ctx.exception
+        self.assertEqual(err.error.code, "job_not_found")
+        self.assertEqual(err.error.job_id, "job_that_does_not_exist")
+
 if __name__ == "__main__":
-    #unittest.main()
-    unittest.main(defaultTest="TestJobsBlackBox.test_start_and_stop_npm_run_start")
+    unittest.main()
+    #unittest.main(defaultTest="TestJobsBlackBox.test_start_and_stop_npm_run_start")
     #unittest.main(defaultTest="TestJobsBlackBox.test_run_to_finished")
 
     
