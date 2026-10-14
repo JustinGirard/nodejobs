@@ -1,0 +1,17 @@
+# JavaScript
+node_modules/
+dist/
+coverage/
+*.log
+
+# Python in clients subtree
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# C#/.NET
+**/bin/
+**/obj/
+**/TestResults/
+*.user
+*.suo

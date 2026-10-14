@@ -27,9 +27,7 @@ dependencies = [
 ]
 
 [project.scripts]
-# To expose a console script, uncomment and adjust:
-# nodejobs-run = "nodejobs.jobs:main"
+nodejobs-client-test = "nodejobs.client.test_runner:main"
 
 [tool.setuptools]
 packages = { find = { exclude = ["tests*", "docs*"] } }
-

@@ -8,28 +8,81 @@ on:
     branches: [ master ]
 
 jobs:
-  build-and-test:
+  python-client-tests:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: [3.11]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Set up Python ${{ matrix.python-version }}
+      - name: Set up Python 3.11
         uses: actions/setup-python@v4
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.11"
 
       - name: Upgrade pip and install test runner
         run: |
           python -m pip install --upgrade pip setuptools wheel pytest
 
-      - name: Install repo from GitHub
+      - name: Install repo from checkout
         run: |
-          pip install git+https://github.com/JustinGirard/nodejobs@master
+          pip install -e .
 
-      - name: Run tests
+      - name: Run Python client smoke tests
         run: |
-          pytest
+          mkdir -p test-results
+          pytest tests/client -q --junitxml=test-results/pytest-client.xml
+
+      - name: Upload Python test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-client-test-results
+          path: test-results/
+
+  javascript-client-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Run JavaScript smoke tests
+        working-directory: clients/javascript
+        run: |
+          mkdir -p test-results
+          npm test | tee test-results/npm-test.log
+
+      - name: Upload JavaScript test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: javascript-client-test-results
+          path: clients/javascript/test-results/
+
+  csharp-client-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Run C# smoke tests
+        working-directory: clients/csharp/Nodejobs.Client.Tests
+        run: |
+          mkdir -p test-results
+          dotnet test --logger "trx;LogFileName=csharp-client.trx" --results-directory test-results
+
+      - name: Upload C# test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: csharp-client-test-results
+          path: clients/csharp/Nodejobs.Client.Tests/test-results/
