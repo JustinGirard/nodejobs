@@ -217,7 +217,10 @@ class BaseService():
     def run_cli(cls):
         kwargs = cls.parse_args()
         result = cls.run(**kwargs)
-        print(f"{result}")
+        try:
+            print(json.dumps(result))
+        except Exception:
+            print(f"{result}")
 
     @classmethod
     def run_nodejobs(
@@ -1081,5 +1084,4 @@ if __name__ == "__main__":
 #         ext = ".exe" if (platform or sys.platform).startswith("win") else ""
 #         return f"{name}{ext}"
 #----------------------------------------------------------------------------------------
-
 

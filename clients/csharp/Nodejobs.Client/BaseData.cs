@@ -112,6 +112,7 @@ public abstract class BaseData
 
     private static bool ValidType(object value, Type expected)
     {
+        if (expected == typeof(object)) return true;
         if (value == null) return false;
         if (expected == typeof(string)) return value is string;
         if (expected == typeof(int)) return value is int;

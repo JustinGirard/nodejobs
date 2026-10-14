@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { ClientService } from "../src/ClientService.js";
 import { ClientData } from "../src/ClientData.js";
@@ -16,58 +17,63 @@ function dprint(line) {
 test("javascript client lifecycle + hello", async () => {
   const repoRoot = path.resolve(process.cwd(), "../..");
   const py = process.env.PYTHON;
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "nodejobs-client-js-"));
   const commands = {
     now: {
       requiredParams: ["tz_offset"],
       optionalParams: [],
       transportCommand: "now",
     },
+    fixture: {
+      requiredParams: ["kind"],
+      optionalParams: [],
+      transportCommand: "fixture",
+    },
   };
   const httpTemplate = {
-    host: "127.0.0.1",
+    transport: "http",
     port: 8871,
-    baseUrl: "http://127.0.0.1:8871",
-    python: py,
-    testName: "javascript_http_case",
     path: "/cmd",
-    launchCommand: [
-      py,
-      "-m",
-      "nodejobs.dependencies.TestService",
-      "launch",
-      "host=127.0.0.1",
-      "port=8871",
-      "path=/cmd",
-    ],
-    launchCwd: repoRoot,
     commands,
+    lifecycle: {
+      dbPath: path.join(tmpRoot, "jobs_http.db"),
+      launchCommand: [
+        py,
+        "-m",
+        "nodejobs.dependencies.TestService",
+        "launch",
+        "host=127.0.0.1",
+        "port=8871",
+        "path=/cmd",
+      ],
+      python: py,
+      launchCwd: repoRoot,
+    },
   };
   const mcpTemplate = {
-    host: "127.0.0.1",
+    transport: "mcp",
     port: 8874,
-    baseUrl: "http://127.0.0.1:8874",
-    python: py,
-    testName: "javascript_mcp_case",
     path: "/mcp",
-    launchCommand: [
-      py,
-      "-m",
-      "nodejobs.dependencies.TestService",
-      "serve",
-      "transport=http",
-      "host=127.0.0.1",
-      "port=8874",
-      "path=/mcp",
-    ],
-    launchCwd: repoRoot,
     commands,
+    lifecycle: {
+      dbPath: path.join(tmpRoot, "jobs_mcp.db"),
+      launchCommand: [
+        py,
+        "-m",
+        "nodejobs.dependencies.TestService",
+        "serve",
+        "transport=http",
+        "host=127.0.0.1",
+        "port=8874",
+        "path=/mcp",
+      ],
+      python: py,
+      launchCwd: repoRoot,
+    },
   };
   const cliTemplate = {
-    host: "127.0.0.1",
+    transport: "cli",
     port: 0,
-    baseUrl: "http://127.0.0.1:0",
-    python: py,
-    testName: "javascript_cli_case",
     path: "/unused",
     launchCommand: [
       py,
@@ -84,9 +90,9 @@ test("javascript client lifecycle + hello", async () => {
   };
   const data = new ClientData({
     servers: {
-      httpCase: { transport: "http", ...httpTemplate },
-      mcpCase: { transport: "mcp", ...mcpTemplate },
-      cliCase: { transport: "cli", ...cliTemplate },
+      httpCase: httpTemplate,
+      mcpCase: mcpTemplate,
+      cliCase: cliTemplate,
     },
   });
   const client = new ClientService(data, new ClientAuth("local"));
@@ -100,7 +106,7 @@ test("javascript client lifecycle + hello", async () => {
   try {
     for (const c of cases) {
       if (c.needsServer) {
-        client.startServer({ serverAlias: c.alias });
+        await client.startServer({ serverAlias: c.alias });
         await client.waitReady({ serverAlias: c.alias, timeoutS: 8 });
       }
       for (const tzOffset of offsets) {
@@ -112,15 +118,39 @@ test("javascript client lifecycle + hello", async () => {
         assert.equal(out, expected);
       }
       if (c.needsServer) {
-        const srv = data.getServer({ serverAlias: c.alias });
-        const dbPath = path.join(repoRoot, "tests", "client", "artifacts", `client_${srv.testName}`, "job_db");
-        assert.ok(fs.existsSync(dbPath));
-        client.stopServer({ serverAlias: c.alias });
+        await client.stopServer({ serverAlias: c.alias });
       }
     }
+
+    await client.startServer({ serverAlias: "httpCase" });
+    await client.waitReady({ serverAlias: "httpCase", timeoutS: 8 });
+    await client.startServer({ serverAlias: "mcpCase" });
+    await client.waitReady({ serverAlias: "mcpCase", timeoutS: 8 });
+    const fixtureKinds = ["int", "float", "string", "bool", "dict", "list", "null", "nested"];
+    for (const kind of fixtureKinds) {
+      const http = await client.invoke({ serverAlias: "httpCase", commandId: "fixture", data: { kind } });
+      const mcp = await client.invoke({ serverAlias: "mcpCase", commandId: "fixture", data: { kind } });
+      const cli = await client.invoke({ serverAlias: "cliCase", commandId: "fixture", data: { kind } });
+      assert.deepEqual(http, mcp);
+      assert.deepEqual(http, cli);
+    }
+    await client.stopServer({ serverAlias: "mcpCase" });
+    await client.stopServer({ serverAlias: "httpCase" });
+
+    await client.startServer({ serverAlias: "httpCase" });
+    await client.waitReady({ serverAlias: "httpCase", timeoutS: 8 });
+    const concurrent = await Promise.all(
+      Array.from({ length: 20 }, () => client.invoke({ serverAlias: "httpCase", commandId: "fixture", data: { kind: "int" } })),
+    );
+    assert.ok(concurrent.every((x) => x === 3));
+    await client.stopServer({ serverAlias: "httpCase" });
   } finally {
     for (const c of cases) {
-      client.stopServer({ serverAlias: c.alias });
+      try {
+        await client.stopServer({ serverAlias: c.alias });
+      } catch (_) {
+      }
     }
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
   }
 });

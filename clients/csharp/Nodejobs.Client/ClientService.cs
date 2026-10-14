@@ -1,8 +1,11 @@
 namespace Nodejobs.Client;
+
 using System.Diagnostics;
+using System.Globalization;
 using System.Net.Http;
 using System.Text;
-using System.Globalization;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
 public class ClientService
 {
@@ -17,32 +20,6 @@ public class ClientService
         public string JobId { get; set; }
         public string Host { get; set; }
         public int Port { get; set; }
-        public string Path { get; set; }
-    }
-
-    private string GetArtifactRoot(string testName)
-    {
-        var root = Path.Combine(FindRepoRoot(), "tests", "client", "artifacts", $"client_{testName}");
-        if (Directory.Exists(root)) Directory.Delete(root, true);
-        Directory.CreateDirectory(root);
-        return root;
-    }
-
-    private (int ExitCode, string StdOut, string StdErr) RunLifecycleService(
-        string python,
-        List<string> args,
-        string workingDirectory,
-        Dictionary<string, string>? extraEnv = null
-    )
-    {
-        var joined = string.Join(" ", args.ConvertAll(QuoteArg));
-        return RunProcess(python, $"-m nodejobs.client.lifecycle_ops {joined}", workingDirectory, extraEnv);
-    }
-
-    private static string QuoteArg(string arg)
-    {
-        var v = arg.Replace("\\", "\\\\").Replace("\"", "\\\"");
-        return $"\"{v}\"";
     }
 
     public ClientService(ClientData data, ClientAuth auth)
@@ -51,47 +28,59 @@ public class ClientService
         Auth = auth;
     }
 
-    public Dictionary<string, string> StartServer(Dictionary<string, object> payload)
+    public async Task<Dictionary<string, string>> StartServerAsync(Dictionary<string, object> payload)
     {
         var aliasPayload = new ServerAliasSpec(payload);
         var alias = aliasPayload.ServerAlias;
         var spec = Data.GetServer(payload);
-        var repoRoot = FindRepoRoot();
-        var root = GetArtifactRoot(spec.TestName);
-        var dbPath = Path.Combine(root, "job_db");
-        var jobId = $"__CLIENT_LIFECYCLE__{spec.TestName}__{alias}__{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}";
-        var py = spec.Python;
-        if (spec.LaunchCommand == null)
+        if (spec.Lifecycle == null)
         {
-            throw new Exception("launch_command_required");
+            throw new Exception("lifecycle_required_for_start");
         }
-        var commandJson = DJson.Stringify(spec.LaunchCommand);
+        var lifecycle = new LifecycleSpec(spec.Lifecycle);
+        var dbPath = lifecycle.DbPath;
+        var jobId = !string.IsNullOrWhiteSpace(lifecycle.JobId)
+            ? lifecycle.JobId
+            : $"__CLIENT_LIFECYCLE__{alias}__{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}";
+        var py = !string.IsNullOrWhiteSpace(lifecycle.Python)
+            ? lifecycle.Python
+            : Environment.GetEnvironmentVariable("PYTHON");
+        if (string.IsNullOrWhiteSpace(py))
+        {
+            throw new Exception("python_required_for_lifecycle");
+        }
+
         var runArgs = new List<string>
         {
+            "-m", "nodejobs.client.lifecycle_ops",
             "--action", "start",
             "--db-path", dbPath,
-            "--command-json", commandJson
+            "--command-json", DJson.Stringify(lifecycle.LaunchCommand),
         };
-        if (!string.IsNullOrWhiteSpace(spec.LaunchCwd))
+        if (!string.IsNullOrWhiteSpace(lifecycle.LaunchCwd))
         {
             runArgs.Add("--cwd");
-            runArgs.Add(spec.LaunchCwd);
+            runArgs.Add(lifecycle.LaunchCwd);
         }
-        var res = RunLifecycleService(
-            py,
-            runArgs,
-            repoRoot,
-            new Dictionary<string, string>
-            {
-                ["NODEJOBS_LIFECYCLE_JOB_ID"] = jobId
-            }
-        );
+
+        var extraEnv = new Dictionary<string, string>
+        {
+            ["NODEJOBS_LIFECYCLE_JOB_ID"] = jobId,
+        };
+        var res = await RunProcessAsync(py, runArgs, lifecycle.LaunchCwd, extraEnv);
         if (res.ExitCode != 0) throw new Exception(res.StdErr + res.StdOut);
-        _runtimeByAlias[alias] = new RuntimeState { DbPath = dbPath, JobId = jobId, Host = spec.Host, Port = spec.Port, Path = spec.Path };
+
+        _runtimeByAlias[alias] = new RuntimeState
+        {
+            DbPath = dbPath,
+            JobId = jobId,
+            Host = spec.Host,
+            Port = spec.Port,
+        };
         return new Dictionary<string, string> { { "status", "ok" }, { "job_id", jobId } };
     }
 
-    public Dictionary<string, string> WaitReady(Dictionary<string, object> payload)
+    public async Task<Dictionary<string, string>> WaitReadyAsync(Dictionary<string, object> payload)
     {
         var waitPayload = new WaitReadySpec(payload);
         var alias = waitPayload.ServerAlias;
@@ -101,19 +90,31 @@ public class ClientService
             throw new Exception($"server_not_started:{alias}");
         }
         var spec = Data.GetServer(new Dictionary<string, object> { [ServerAliasSpec.f_server_alias] = alias });
-        var res = RunLifecycleService(
-            spec.Python,
-            new List<string>
-            {
-                "--action", "wait",
-                "--db-path", runtime.DbPath,
-                "--job-id", runtime.JobId,
-                "--host", runtime.Host,
-                "--port", runtime.Port.ToString(),
-                "--timeout-s", timeoutS.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            },
-            FindRepoRoot()
-        );
+        if (spec.Lifecycle == null)
+        {
+            throw new Exception("lifecycle_required_for_wait");
+        }
+        var lifecycle = new LifecycleSpec(spec.Lifecycle);
+        var py = !string.IsNullOrWhiteSpace(lifecycle.Python)
+            ? lifecycle.Python
+            : Environment.GetEnvironmentVariable("PYTHON");
+        if (string.IsNullOrWhiteSpace(py))
+        {
+            throw new Exception("python_required_for_lifecycle");
+        }
+
+        var args = new List<string>
+        {
+            "-m", "nodejobs.client.lifecycle_ops",
+            "--action", "wait",
+            "--db-path", runtime.DbPath,
+            "--job-id", runtime.JobId,
+            "--host", runtime.Host,
+            "--port", runtime.Port.ToString(CultureInfo.InvariantCulture),
+            "--timeout-s", timeoutS.ToString(CultureInfo.InvariantCulture),
+        };
+
+        var res = await RunProcessAsync(py, args, lifecycle.LaunchCwd);
         if (res.ExitCode != 0)
         {
             throw new Exception(res.StdErr + res.StdOut);
@@ -121,7 +122,7 @@ public class ClientService
         return new Dictionary<string, string> { { "status", "ok" } };
     }
 
-    public Dictionary<string, object> Invoke(Dictionary<string, object> payload)
+    public async Task<object> InvokeAsync(Dictionary<string, object> payload)
     {
         var validated = Data.ValidateInvoke(payload);
         var invoke = validated.invoke;
@@ -130,7 +131,6 @@ public class ClientService
         var body = validated.validatedData;
         var transport = server.Transport.Trim().ToLowerInvariant();
         var wireCommand = string.IsNullOrWhiteSpace(command.TransportCommand) ? invoke.CommandId : command.TransportCommand;
-        var endpoint = wireCommand.TrimStart('/');
         var baseUrl = server.BaseUrl.TrimEnd('/');
 
         if (transport == "http")
@@ -144,47 +144,35 @@ public class ClientService
             };
             var json = DJson.Stringify(envelope);
             var content = new StringContent(json, Encoding.UTF8, "application/json");
-            var request = new HttpRequestMessage(HttpMethod.Post, $"{baseUrl}{route}")
-            {
-                Content = content
-            };
-            var response = _http.SendAsync(request).GetAwaiter().GetResult();
-            var raw = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+            var request = new HttpRequestMessage(HttpMethod.Post, $"{baseUrl}{route}") { Content = content };
+            var response = await _http.SendAsync(request);
+            var raw = await response.Content.ReadAsStringAsync();
             var code = (int)response.StatusCode;
             if (code != 200 && code != 201)
             {
                 throw new Exception($"{code}:{raw}");
             }
-            var trimmed = raw.Trim();
-            if (trimmed.StartsWith("{"))
-            {
-                return DJson.Parse(trimmed);
-            }
-            if (double.TryParse(trimmed, NumberStyles.Float, CultureInfo.InvariantCulture, out var n))
-            {
-                return new Dictionary<string, object> { ["data"] = n };
-            }
-            return new Dictionary<string, object> { ["data"] = trimmed };
+            return ParseJsonLike(raw);
         }
 
         if (transport == "mcp")
         {
-            var py = server.Python;
+            var py = ResolvePythonForBridge(server);
             var mcpReq = DJson.Stringify(body);
-            var escapedReq = mcpReq.Replace("\"", "\\\"");
-            var mcp = RunProcess(py, $"-m nodejobs.client.mcp_invoke --base-url \"{baseUrl}\" --path \"{server.Path}\" --tool \"{invoke.CommandId}\" --data-json \"{escapedReq}\" --timeout-s 8", FindRepoRoot());
-            if (mcp.ExitCode != 0) throw new Exception(mcp.StdErr + mcp.StdOut);
-            var mcpObj = DJson.Parse(mcp.StdOut);
-            var mcpData = DJson.TryGetKeyAt(mcpObj, new List<string> { "data" }, null);
-            if (mcpData == null) throw new Exception("mcp_response_missing_data");
-            if (mcpData is Dictionary<string, object> mcpDataObj)
+            var args = new List<string>
             {
-                return mcpDataObj;
-            }
-            return new Dictionary<string, object>
-            {
-                ["data"] = mcpData
+                "-m", "nodejobs.client.mcp_invoke",
+                "--base-url", baseUrl,
+                "--path", server.Path,
+                "--tool", invoke.CommandId,
+                "--data-json", mcpReq,
+                "--timeout-s", "8",
             };
+            var mcp = await RunProcessAsync(py, args, null);
+            if (mcp.ExitCode != 0) throw new Exception(mcp.StdErr + mcp.StdOut);
+            var mcpObj = DJson.Parse(mcp.StdOut.Trim());
+            var mcpData = DJson.TryGetKeyAt(mcpObj, new List<string> { "data" }, null);
+            return mcpData;
         }
 
         if (transport == "cli")
@@ -194,29 +182,26 @@ public class ClientService
             if (serveIndex < 0) throw new Exception("cli_launch_command_missing_serve");
             var prefix = server.LaunchCommand.GetRange(0, serveIndex);
             if (prefix.Count == 0) throw new Exception("cli_launch_command_missing_prefix");
-            var args = new List<string> { invoke.CommandId };
+            var cliArgs = new List<string> { invoke.CommandId };
             foreach (var kv in body)
             {
                 var value = kv.Value is string s ? s : DJson.Stringify(kv.Value);
-                args.Add($"{kv.Key}={value}");
+                cliArgs.Add($"{kv.Key}={value}");
             }
-            var fileName = prefix[0];
-            var allArgs = string.Join(" ", prefix.Skip(1).Concat(args).Select(QuoteArg));
-            var cli = RunProcess(fileName, allArgs, string.IsNullOrWhiteSpace(server.LaunchCwd) ? FindRepoRoot() : server.LaunchCwd);
+            var command = new List<string>();
+            command.AddRange(prefix);
+            command.AddRange(cliArgs);
+            var cli = await RunProcessAsync(command[0], command.Skip(1).ToList(), server.LaunchCwd);
             if (cli.ExitCode != 0) throw new Exception($"cli_invoke_failed:{cli.ExitCode}\nstdout:\n{cli.StdOut}\nstderr:\n{cli.StdErr}");
             var lines = cli.StdOut.Split('\n').Select(x => x.Trim()).Where(x => x.Length > 0).ToList();
             if (lines.Count == 0) throw new Exception("cli_empty_stdout");
             var rawOut = lines[^1];
-            if (double.TryParse(rawOut, out var n))
-            {
-                return new Dictionary<string, object> { ["data"] = n };
-            }
-            return new Dictionary<string, object> { ["data"] = rawOut };
+            return ParseJsonLike(rawOut);
         }
         throw new Exception($"unsupported_transport:{transport}");
     }
 
-    public Dictionary<string, string> StopServer(Dictionary<string, object> payload)
+    public async Task<Dictionary<string, string>> StopServerAsync(Dictionary<string, object> payload)
     {
         var aliasPayload = new ServerAliasSpec(payload);
         var alias = aliasPayload.ServerAlias;
@@ -226,37 +211,113 @@ public class ClientService
         }
         var runtime = _runtimeByAlias[alias];
         var spec = Data.GetServer(new Dictionary<string, object> { [ServerAliasSpec.f_server_alias] = alias });
-        var repoRoot = FindRepoRoot();
-        var py = spec.Python;
-        var res = RunLifecycleService(py, new List<string>
+        if (spec.Lifecycle == null)
         {
+            _runtimeByAlias.Remove(alias);
+            return new Dictionary<string, string> { { "status", "ok" } };
+        }
+        var lifecycle = new LifecycleSpec(spec.Lifecycle);
+        var py = !string.IsNullOrWhiteSpace(lifecycle.Python)
+            ? lifecycle.Python
+            : Environment.GetEnvironmentVariable("PYTHON");
+        if (string.IsNullOrWhiteSpace(py))
+        {
+            throw new Exception("python_required_for_lifecycle");
+        }
+        var args = new List<string>
+        {
+            "-m", "nodejobs.client.lifecycle_ops",
             "--action", "stop",
             "--db-path", runtime.DbPath,
             "--job-id", runtime.JobId,
             "--wait-time", "1",
-        }, repoRoot);
+        };
+        var res = await RunProcessAsync(py, args, lifecycle.LaunchCwd);
         _runtimeByAlias.Remove(alias);
         if (res.ExitCode != 0) throw new Exception(res.StdErr + res.StdOut);
         return new Dictionary<string, string> { { "status", "ok" } };
     }
 
-    private static (int ExitCode, string StdOut, string StdErr) RunProcess(
+    public Dictionary<string, string> StartServer(Dictionary<string, object> payload) => StartServerAsync(payload).GetAwaiter().GetResult();
+    public Dictionary<string, string> WaitReady(Dictionary<string, object> payload) => WaitReadyAsync(payload).GetAwaiter().GetResult();
+    public object Invoke(Dictionary<string, object> payload) => InvokeAsync(payload).GetAwaiter().GetResult();
+    public Dictionary<string, string> StopServer(Dictionary<string, object> payload) => StopServerAsync(payload).GetAwaiter().GetResult();
+
+    private string ResolvePythonForBridge(ServerSpec server)
+    {
+        if (server.Lifecycle != null)
+        {
+            var lifecycle = new LifecycleSpec(server.Lifecycle);
+            if (!string.IsNullOrWhiteSpace(lifecycle.Python))
+            {
+                return lifecycle.Python;
+            }
+        }
+        var py = Environment.GetEnvironmentVariable("PYTHON");
+        if (string.IsNullOrWhiteSpace(py))
+        {
+            throw new Exception("python_required_for_mcp_bridge");
+        }
+        return py;
+    }
+
+    private static object ParseJsonLike(string raw)
+    {
+        var t = raw.Trim();
+        if (string.Equals(t, "null", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+        try
+        {
+            var parsed = JsonConvert.DeserializeObject(t);
+            if (parsed is JObject obj)
+            {
+                return DJson.Parse(obj.ToString(Formatting.None));
+            }
+            if (parsed is JArray arr)
+            {
+                return DJson.ParseGeneric(arr.ToString(Formatting.None));
+            }
+            if (parsed is JValue jv)
+            {
+                return jv.Value;
+            }
+            if (parsed != null)
+            {
+                return parsed;
+            }
+        }
+        catch
+        {
+        }
+        if (double.TryParse(t, NumberStyles.Float, CultureInfo.InvariantCulture, out var n))
+        {
+            return n;
+        }
+        return t;
+    }
+
+    private static async Task<(int ExitCode, string StdOut, string StdErr)> RunProcessAsync(
         string fileName,
-        string arguments,
-        string workingDirectory,
+        List<string> arguments,
+        string? workingDirectory,
         Dictionary<string, string>? extraEnv = null
     )
     {
         var psi = new ProcessStartInfo
         {
             FileName = fileName,
-            Arguments = arguments,
-            WorkingDirectory = workingDirectory,
+            Arguments = string.Join(" ", arguments.Select(QuoteArg)),
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
             CreateNoWindow = true,
         };
+        if (!string.IsNullOrWhiteSpace(workingDirectory))
+        {
+            psi.WorkingDirectory = workingDirectory;
+        }
         if (extraEnv != null)
         {
             foreach (var kv in extraEnv)
@@ -265,25 +326,17 @@ public class ClientService
             }
         }
         using var proc = Process.Start(psi)!;
-        var stdout = proc.StandardOutput.ReadToEnd();
-        var stderr = proc.StandardError.ReadToEnd();
-        proc.WaitForExit();
+        var outTask = proc.StandardOutput.ReadToEndAsync();
+        var errTask = proc.StandardError.ReadToEndAsync();
+        await Task.Run(() => proc.WaitForExit());
+        var stdout = await outTask;
+        var stderr = await errTask;
         return (proc.ExitCode, stdout, stderr);
     }
 
-    private static string FindRepoRoot()
+    private static string QuoteArg(string arg)
     {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir != null)
-        {
-            var pyproject = Path.Combine(dir.FullName, "pyproject.toml");
-            var nodejobsPkg = Path.Combine(dir.FullName, "nodejobs");
-            if (File.Exists(pyproject) && Directory.Exists(nodejobsPkg))
-            {
-                return dir.FullName;
-            }
-            dir = dir.Parent;
-        }
-        throw new Exception("repo root not found from AppContext.BaseDirectory");
+        var v = arg.Replace("\\", "\\\\").Replace("\"", "\\\"");
+        return $"\"{v}\"";
     }
 }

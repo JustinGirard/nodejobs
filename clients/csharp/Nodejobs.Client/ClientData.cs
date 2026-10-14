@@ -164,50 +164,77 @@ public sealed class ServerSpec : BaseData
     public const string f_transport = "transport";
     public const string f_host = "host";
     public const string f_port = "port";
+    public const string f_protocol = "protocol";
     public const string f_base_url = "base_url";
-    public const string f_python = "python";
-    public const string f_test_name = "test_name";
     public const string f_path = "path";
     public const string f_commands = "commands";
     public const string f_launch_command = "launch_command";
     public const string f_launch_cwd = "launch_cwd";
+    public const string f_python = "python";
+    public const string f_test_name = "test_name";
+    public const string f_lifecycle = "lifecycle";
 
     public string Transport => Get<string>(f_transport);
     public string Host => Get<string>(f_host);
     public int Port => Get<int>(f_port);
+    public string Protocol => GetOptional<string>(f_protocol) ?? "http";
     public string BaseUrl => Get<string>(f_base_url);
-    public string Python => Get<string>(f_python);
-    public string TestName => Get<string>(f_test_name);
+    public string? Python => GetOptional<string>(f_python);
+    public string? TestName => GetOptional<string>(f_test_name);
     public string Path => Get<string>(f_path);
-    public Dictionary<string, object> Commands => Get<Dictionary<string, object>>(f_commands);
+    public Dictionary<string, object> Commands => GetOptional<Dictionary<string, object>>(f_commands) ?? new Dictionary<string, object>();
     public List<string>? LaunchCommand => GetOptional<List<string>>(f_launch_command);
     public string? LaunchCwd => GetOptional<string>(f_launch_cwd);
+    public Dictionary<string, object>? Lifecycle => GetOptional<Dictionary<string, object>>(f_lifecycle);
 
     public ServerSpec(Dictionary<string, object> input) : base(input) { }
 
     protected override Dictionary<string, Type> RequiredKeys() => new()
     {
         [f_transport] = typeof(string),
-        [f_host] = typeof(string),
         [f_port] = typeof(int),
-        [f_base_url] = typeof(string),
-        [f_python] = typeof(string),
-        [f_test_name] = typeof(string),
-        [f_path] = typeof(string),
-        [f_commands] = typeof(Dictionary<string, object>),
     };
 
     protected override Dictionary<string, Type> OptionalKeys() => new()
     {
+        [f_host] = typeof(string),
+        [f_protocol] = typeof(string),
+        [f_base_url] = typeof(string),
+        [f_path] = typeof(string),
+        [f_commands] = typeof(Dictionary<string, object>),
         [f_launch_command] = typeof(List<string>),
         [f_launch_cwd] = typeof(string),
+        [f_python] = typeof(string),
+        [f_test_name] = typeof(string),
+        [f_lifecycle] = typeof(Dictionary<string, object>),
     };
 
     protected override Dictionary<string, object> DoPreProcess(Dictionary<string, object> input)
     {
+        if (!input.ContainsKey(f_transport))
+        {
+            input[f_transport] = "http";
+        }
         if (input.ContainsKey(f_transport) && input[f_transport] is string s)
         {
             input[f_transport] = s.Trim().ToLowerInvariant();
+        }
+        if (!input.ContainsKey(f_host))
+        {
+            input[f_host] = "127.0.0.1";
+        }
+        if (!input.ContainsKey(f_protocol))
+        {
+            input[f_protocol] = "http";
+        }
+        if (!input.ContainsKey(f_path) || string.IsNullOrWhiteSpace(input[f_path]?.ToString()))
+        {
+            var t = input[f_transport].ToString()!.Trim().ToLowerInvariant();
+            input[f_path] = t == "mcp" ? "/mcp" : "/cmd";
+        }
+        if (!input.ContainsKey(f_base_url) || string.IsNullOrWhiteSpace(input[f_base_url]?.ToString()))
+        {
+            input[f_base_url] = $"{input[f_protocol]}://{input[f_host]}:{input[f_port]}";
         }
         return input;
     }
@@ -216,12 +243,52 @@ public sealed class ServerSpec : BaseData
     {
         if (key == f_transport && (value is not string s0 || s0.Length == 0)) throw new Exception("transport_required");
         if (key == f_host && (value is not string s1 || s1.Length == 0)) throw new Exception("host_required");
-        if (key == f_base_url && (value is not string s2 || s2.Length == 0)) throw new Exception("base_url_required");
-        if (key == f_python && (value is not string s3 || s3.Length == 0)) throw new Exception("python_required");
-        if (key == f_test_name && (value is not string s4 || s4.Length == 0)) throw new Exception("test_name_required");
         if (key == f_path && (value is not string s5 || s5.Length == 0)) throw new Exception("path_required");
         return value;
     }
+}
+
+public sealed class LifecycleSpec : BaseData
+{
+    public const string f_db_path = "db_path";
+    public const string f_launch_command = "launch_command";
+    public const string f_python = "python";
+    public const string f_launch_cwd = "launch_cwd";
+    public const string f_job_id = "job_id";
+
+    public string DbPath => Get<string>(f_db_path);
+    public List<string> LaunchCommand => Get<List<string>>(f_launch_command);
+    public string? Python => GetOptional<string>(f_python);
+    public string? LaunchCwd => GetOptional<string>(f_launch_cwd);
+    public string? JobId => GetOptional<string>(f_job_id);
+
+    public LifecycleSpec(Dictionary<string, object> input) : base(input) { }
+
+    protected override Dictionary<string, Type> RequiredKeys() => new()
+    {
+        [f_db_path] = typeof(string),
+        [f_launch_command] = typeof(List<string>),
+    };
+
+    protected override Dictionary<string, Type> OptionalKeys() => new()
+    {
+        [f_python] = typeof(string),
+        [f_launch_cwd] = typeof(string),
+        [f_job_id] = typeof(string),
+    };
+}
+
+public sealed class InvokeResultSpec : BaseData
+{
+    public const string f_data = "data";
+    public object Data => Get<object>(f_data);
+
+    public InvokeResultSpec(Dictionary<string, object> input) : base(input) { }
+
+    protected override Dictionary<string, Type> RequiredKeys() => new()
+    {
+        [f_data] = typeof(object),
+    };
 }
 
 public sealed class CommandPayloadSpec : BaseData
@@ -283,11 +350,11 @@ public sealed class ClientData : BaseData
     {
         var invoke = new InvokeSpec(payload);
         var server = GetServer(new Dictionary<string, object> { [ServerAliasSpec.f_server_alias] = invoke.ServerAlias });
-        if (!server.Commands.ContainsKey(invoke.CommandId))
+        if (server.Commands.ContainsKey(invoke.CommandId))
         {
-            throw new Exception($"unknown_command:{invoke.ServerAlias}:{invoke.CommandId}");
+            return new CommandSpec((Dictionary<string, object>)server.Commands[invoke.CommandId]);
         }
-        return new CommandSpec((Dictionary<string, object>)server.Commands[invoke.CommandId]);
+        return new CommandSpec(new Dictionary<string, object> { [CommandSpec.f_required_params] = new List<string>() });
     }
 
     public (InvokeSpec invoke, ServerSpec server, CommandSpec command, Dictionary<string, object> validatedData) ValidateInvoke(Dictionary<string, object> payload)

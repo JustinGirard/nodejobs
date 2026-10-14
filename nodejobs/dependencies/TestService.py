@@ -14,11 +14,28 @@ class TestService(BaseService):
             "launch": {"required_args": [], "method": cls.launch},
             "serve": {"required_args": [], "method": cls.serve},
             "now": {"required_args": ["tz_offset"], "method": cls.now},
+            "fixture": {"required_args": ["kind"], "method": cls.fixture},
         }
 
     @classmethod
     def now(cls, tz_offset: float) -> float:
         return float(tz_offset) + 10
+
+    @classmethod
+    def fixture(cls, kind: str):
+        fixtures = {
+            "int": 3,
+            "float": 2.5,
+            "string": "abc",
+            "bool": True,
+            "dict": {"a": 1, "error": "app-level"},
+            "list": [1, "x", False],
+            "null": None,
+            "nested": {"x": [1, {"y": None}]},
+        }
+        if kind not in fixtures:
+            raise Exception(f"unknown_fixture_kind:{kind}")
+        return fixtures[kind]
 
     @classmethod
     def launch(
@@ -82,6 +99,10 @@ class TestService(BaseService):
         @mcp.tool(name="now")
         def now(tz_offset: float) -> float:
             return cls.now(tz_offset=tz_offset)
+
+        @mcp.tool(name="fixture")
+        def fixture(kind: str) -> object:
+            return cls.fixture(kind=kind)
 
         mcp.run(transport=str(transport), host=str(host), port=int(port), path=str(path))
 

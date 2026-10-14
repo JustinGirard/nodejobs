@@ -93,27 +93,40 @@ export class ServerSpec extends BaseData {
     return {
       required: {
         transport: "string",
-        host: "string",
         port: "number",
-        baseUrl: "string",
-        python: "string",
-        testName: "string",
-        path: "string",
       },
       optional: {
+        host: "string",
+        protocol: "string",
+        baseUrl: "string",
+        path: "string",
         commands: { mapOf: "object" },
         launchCommand: "array",
         launchCwd: "string",
+        python: "string",
+        testName: "string",
+        lifecycle: "object",
       },
     };
   }
 
   do_pre_process(inData) {
     const out = { ...inData };
-    if ("transport" in out && typeof out.transport === "string") {
-      out.transport = out.transport.trim().toLowerCase();
-    }
+    out.transport = typeof out.transport === "string" ? out.transport.trim().toLowerCase() : "http";
+    if (!("host" in out)) out.host = "127.0.0.1";
+    if (!("protocol" in out)) out.protocol = "http";
+    if (!("path" in out) || !out.path) out.path = out.transport === "mcp" ? "/mcp" : "/cmd";
+    if (!("baseUrl" in out) || !out.baseUrl) out.baseUrl = `${out.protocol}://${out.host}:${out.port}`;
     return out;
+  }
+}
+
+export class LifecycleSpec extends BaseData {
+  static schema() {
+    return {
+      required: { dbPath: "string", launchCommand: "array" },
+      optional: { python: "string", launchCwd: "string", jobId: "string" },
+    };
   }
 }
 
@@ -172,10 +185,10 @@ export class ClientData extends BaseData {
   getCommand(invokePayload) {
     const payload = new InvokeSpec(invokePayload);
     const server = this.getServer({ serverAlias: payload.serverAlias });
-    if (!("commands" in server) || !(payload.commandId in server.commands)) {
-      throw new Error(`unknown_command:${payload.serverAlias}:${payload.commandId}`);
+    if ("commands" in server && server.commands && payload.commandId in server.commands) {
+      return new CommandSpec(server.commands[payload.commandId]);
     }
-    return new CommandSpec(server.commands[payload.commandId]);
+    return new CommandSpec({ requiredParams: [] });
   }
 
   validateInvoke(invokePayload) {
@@ -184,5 +197,13 @@ export class ClientData extends BaseData {
     const command = this.getCommand(payload);
     const validated = new CommandPayloadSpec({ requiredParams: command.requiredParams, data: payload.data });
     return { invoke: payload, server, command, validatedData: validated.data };
+  }
+}
+
+export class InvokeResultSpec extends BaseData {
+  static data = "data";
+
+  static schema() {
+    return { required: { [InvokeResultSpec.data]: "any" }, optional: {} };
   }
 }

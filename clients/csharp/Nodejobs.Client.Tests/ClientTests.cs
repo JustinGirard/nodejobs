@@ -1,6 +1,7 @@
 using Nodejobs.Client;
 using System;
 using System.IO;
+using System.Linq;
 using Xunit;
 
 namespace Nodejobs.Client.Tests;
@@ -28,14 +29,7 @@ public class ClientTests
                     {
                         ["hello"] = new Dictionary<string, object>
                         {
-                            ["transport"] = "http",
-                            ["host"] = "127.0.0.1",
                             ["port"] = 8872,
-                            ["base_url"] = "http://127.0.0.1:8872",
-                            ["python"] = "python",
-                            ["test_name"] = "csharp_http_client",
-                            ["path"] = "/mcp",
-                            ["commands"] = new Dictionary<string, object>(),
                         }
                     }
                 }
@@ -46,10 +40,13 @@ public class ClientTests
     }
 
     [Fact]
-    public void ClientLifecycle_StartWaitInvokeStop_CreatesArtifacts()
+    public async Task ClientLifecycle_StartWaitInvokeStop_CreatesArtifacts()
     {
         var repoRoot = FindRepoRoot();
         var py = Environment.GetEnvironmentVariable("PYTHON");
+        var tempRoot = Path.Combine(Path.GetTempPath(), $"nodejobs-client-cs-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempRoot);
+
         var commands = new Dictionary<string, object>
         {
             ["now"] = new Dictionary<string, object>
@@ -57,58 +54,65 @@ public class ClientTests
                 ["required_params"] = new List<string> { "tz_offset" },
                 ["optional_params"] = new List<string>(),
                 ["transport_command"] = "now",
+            },
+            ["fixture"] = new Dictionary<string, object>
+            {
+                ["required_params"] = new List<string> { "kind" },
+                ["optional_params"] = new List<string>(),
+                ["transport_command"] = "fixture",
             }
         };
         var httpTemplate = new Dictionary<string, object>
         {
-            ["host"] = "127.0.0.1",
+            ["transport"] = "http",
             ["port"] = 8872,
-            ["base_url"] = "http://127.0.0.1:8872",
-            ["python"] = py,
-            ["test_name"] = "csharp_http_case",
             ["path"] = "/cmd",
-            ["launch_command"] = new List<string>
-            {
-                py,
-                "-m",
-                "nodejobs.dependencies.TestService",
-                "launch",
-                "host=127.0.0.1",
-                "port=8872",
-                "path=/cmd",
-            },
-            ["launch_cwd"] = repoRoot,
             ["commands"] = commands,
+            ["lifecycle"] = new Dictionary<string, object>
+            {
+                ["db_path"] = Path.Combine(tempRoot, "jobs_http.db"),
+                ["launch_command"] = new List<string>
+                {
+                    py,
+                    "-m",
+                    "nodejobs.dependencies.TestService",
+                    "launch",
+                    "host=127.0.0.1",
+                    "port=8872",
+                    "path=/cmd",
+                },
+                ["python"] = py,
+                ["launch_cwd"] = repoRoot,
+            },
         };
         var mcpTemplate = new Dictionary<string, object>
         {
-            ["host"] = "127.0.0.1",
+            ["transport"] = "mcp",
             ["port"] = 8875,
-            ["base_url"] = "http://127.0.0.1:8875",
-            ["python"] = py,
-            ["test_name"] = "csharp_mcp_case",
             ["path"] = "/mcp",
-            ["launch_command"] = new List<string>
-            {
-                py,
-                "-m",
-                "nodejobs.dependencies.TestService",
-                "serve",
-                "transport=http",
-                "host=127.0.0.1",
-                "port=8875",
-                "path=/mcp",
-            },
-            ["launch_cwd"] = repoRoot,
             ["commands"] = commands,
+            ["lifecycle"] = new Dictionary<string, object>
+            {
+                ["db_path"] = Path.Combine(tempRoot, "jobs_mcp.db"),
+                ["launch_command"] = new List<string>
+                {
+                    py,
+                    "-m",
+                    "nodejobs.dependencies.TestService",
+                    "serve",
+                    "transport=http",
+                    "host=127.0.0.1",
+                    "port=8875",
+                    "path=/mcp",
+                },
+                ["python"] = py,
+                ["launch_cwd"] = repoRoot,
+            },
         };
         var cliTemplate = new Dictionary<string, object>
         {
-            ["host"] = "127.0.0.1",
+            ["transport"] = "cli",
             ["port"] = 0,
-            ["base_url"] = "http://127.0.0.1:0",
-            ["python"] = py,
-            ["test_name"] = "csharp_cli_case",
             ["path"] = "/unused",
             ["launch_command"] = new List<string>
             {
@@ -130,9 +134,9 @@ public class ClientTests
                 {
                     ["servers"] = new Dictionary<string, object>
                     {
-                        ["http_case"] = new Dictionary<string, object> { ["transport"] = "http", ["host"] = httpTemplate["host"], ["port"] = httpTemplate["port"], ["base_url"] = httpTemplate["base_url"], ["python"] = httpTemplate["python"], ["test_name"] = httpTemplate["test_name"], ["path"] = httpTemplate["path"], ["launch_command"] = httpTemplate["launch_command"], ["launch_cwd"] = httpTemplate["launch_cwd"], ["commands"] = httpTemplate["commands"] },
-                        ["mcp_case"] = new Dictionary<string, object> { ["transport"] = "mcp", ["host"] = mcpTemplate["host"], ["port"] = mcpTemplate["port"], ["base_url"] = mcpTemplate["base_url"], ["python"] = mcpTemplate["python"], ["test_name"] = mcpTemplate["test_name"], ["path"] = mcpTemplate["path"], ["launch_command"] = mcpTemplate["launch_command"], ["launch_cwd"] = mcpTemplate["launch_cwd"], ["commands"] = mcpTemplate["commands"] },
-                        ["cli_case"] = new Dictionary<string, object> { ["transport"] = "cli", ["host"] = cliTemplate["host"], ["port"] = cliTemplate["port"], ["base_url"] = cliTemplate["base_url"], ["python"] = cliTemplate["python"], ["test_name"] = cliTemplate["test_name"], ["path"] = cliTemplate["path"], ["launch_command"] = cliTemplate["launch_command"], ["launch_cwd"] = cliTemplate["launch_cwd"], ["commands"] = cliTemplate["commands"] },
+                        ["http_case"] = httpTemplate,
+                        ["mcp_case"] = mcpTemplate,
+                        ["cli_case"] = cliTemplate,
                     }
                 }
             ),
@@ -152,12 +156,12 @@ public class ClientTests
             {
                 if (c.needsServer)
                 {
-                    service.StartServer(new Dictionary<string, object> { ["server_alias"] = c.alias });
-                    service.WaitReady(new Dictionary<string, object> { ["server_alias"] = c.alias, ["timeout_s"] = 8.0 });
+                    await service.StartServerAsync(new Dictionary<string, object> { ["server_alias"] = c.alias });
+                    await service.WaitReadyAsync(new Dictionary<string, object> { ["server_alias"] = c.alias, ["timeout_s"] = 8.0 });
                 }
                 foreach (var tzOffset in offsets)
                 {
-                    var outObj = service.Invoke(
+                    var outObj = await service.InvokeAsync(
                         new Dictionary<string, object>
                         {
                             ["server_alias"] = c.alias,
@@ -165,28 +169,84 @@ public class ClientTests
                             ["data"] = new Dictionary<string, object> { ["tz_offset"] = tzOffset }
                         }
                     );
-                    var outData = DJson.TryGetKeyAt(outObj, new List<string> { "data" }, null);
-                    Assert.NotNull(outData);
+                    Assert.NotNull(outObj);
                     var expected = tzOffset + 10.0;
                     DPrint($"PROOF CS mode={c.mode} request: command_id=now data={{\"tz_offset\":{tzOffset}}}");
-                    DPrint($"PROOF CS mode={c.mode} response: {DJson.Stringify(outObj)} expected={expected}");
-                    Assert.Equal(expected, Convert.ToDouble(outData));
-                    Assert.NotNull(DJson.Stringify(outObj));
+                    DPrint($"PROOF CS mode={c.mode} response: {outObj} expected={expected}");
+                    Assert.Equal(expected, Convert.ToDouble(outObj));
                 }
                 if (c.needsServer)
                 {
-                    var spec = service.Data.GetServer(new Dictionary<string, object> { ["server_alias"] = c.alias });
-                    var dbPath = Path.Combine(repoRoot, "tests", "client", "artifacts", $"client_{spec.TestName}", "job_db");
-                    Assert.True(Directory.Exists(dbPath));
-                    service.StopServer(new Dictionary<string, object> { ["server_alias"] = c.alias });
+                    await service.StopServerAsync(new Dictionary<string, object> { ["server_alias"] = c.alias });
                 }
             }
+
+            await service.StartServerAsync(new Dictionary<string, object> { ["server_alias"] = "http_case" });
+            await service.WaitReadyAsync(new Dictionary<string, object> { ["server_alias"] = "http_case", ["timeout_s"] = 8.0 });
+            await service.StartServerAsync(new Dictionary<string, object> { ["server_alias"] = "mcp_case" });
+            await service.WaitReadyAsync(new Dictionary<string, object> { ["server_alias"] = "mcp_case", ["timeout_s"] = 8.0 });
+
+            var fixtureKinds = new[] { "int", "float", "string", "bool", "dict", "list", "null", "nested" };
+            foreach (var kind in fixtureKinds)
+            {
+                var http = await service.InvokeAsync(new Dictionary<string, object>
+                {
+                    ["server_alias"] = "http_case",
+                    ["command_id"] = "fixture",
+                    ["data"] = new Dictionary<string, object> { ["kind"] = kind },
+                });
+                var mcp = await service.InvokeAsync(new Dictionary<string, object>
+                {
+                    ["server_alias"] = "mcp_case",
+                    ["command_id"] = "fixture",
+                    ["data"] = new Dictionary<string, object> { ["kind"] = kind },
+                });
+                var cli = await service.InvokeAsync(new Dictionary<string, object>
+                {
+                    ["server_alias"] = "cli_case",
+                    ["command_id"] = "fixture",
+                    ["data"] = new Dictionary<string, object> { ["kind"] = kind },
+                });
+                Assert.Equal(DJson.Stringify(http), DJson.Stringify(mcp));
+                Assert.Equal(DJson.Stringify(http), DJson.Stringify(cli));
+            }
+            await service.StopServerAsync(new Dictionary<string, object> { ["server_alias"] = "mcp_case" });
+            await service.StopServerAsync(new Dictionary<string, object> { ["server_alias"] = "http_case" });
+
+            await service.StartServerAsync(new Dictionary<string, object> { ["server_alias"] = "http_case" });
+            await service.WaitReadyAsync(new Dictionary<string, object> { ["server_alias"] = "http_case", ["timeout_s"] = 8.0 });
+            var concurrentTasks = new List<Task<object>>();
+            for (var i = 0; i < 20; i++)
+            {
+                concurrentTasks.Add(service.InvokeAsync(new Dictionary<string, object>
+                {
+                    ["server_alias"] = "http_case",
+                    ["command_id"] = "fixture",
+                    ["data"] = new Dictionary<string, object> { ["kind"] = "int" },
+                }));
+            }
+            var concurrent = await Task.WhenAll(concurrentTasks);
+            Assert.True(concurrent.All(item => Convert.ToInt64(item) == 3));
+            await service.StopServerAsync(new Dictionary<string, object> { ["server_alias"] = "http_case" });
         }
         finally
         {
             foreach (var c in cases)
             {
-                service.StopServer(new Dictionary<string, object> { ["server_alias"] = c.alias });
+                try
+                {
+                    await service.StopServerAsync(new Dictionary<string, object> { ["server_alias"] = c.alias });
+                }
+                catch
+                {
+                }
+            }
+            try
+            {
+                Directory.Delete(tempRoot, true);
+            }
+            catch
+            {
             }
         }
     }

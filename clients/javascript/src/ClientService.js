@@ -1,8 +1,6 @@
-import { ClientData, ServerAliasSpec, WaitReadySpec, InvokeSpec } from "./ClientData.js";
+import { ClientData, ServerAliasSpec, WaitReadySpec, InvokeSpec, LifecycleSpec } from "./ClientData.js";
 import { ClientAuth } from "./ClientAuth.js";
-import { spawnSync } from "node:child_process";
-import fs from "node:fs";
-import path from "node:path";
+import { spawn } from "node:child_process";
 
 export class ClientService {
   constructor(data, auth) {
@@ -11,55 +9,54 @@ export class ClientService {
     this.runtimeByAlias = new Map();
   }
 
-  _repoRoot() {
-    return path.resolve(process.cwd(), "../..");
+  async _runCommandAsync(command, cwd = null, extraEnv = null) {
+    return await new Promise((resolve) => {
+      const env = extraEnv ? { ...process.env, ...extraEnv } : process.env;
+      const child = spawn(String(command[0]), command.slice(1).map((x) => String(x)), {
+        cwd: cwd ? String(cwd) : undefined,
+        env,
+      });
+      let stdout = "";
+      let stderr = "";
+      child.stdout.on("data", (d) => {
+        stdout += d.toString("utf8");
+      });
+      child.stderr.on("data", (d) => {
+        stderr += d.toString("utf8");
+      });
+      child.on("close", (code) => {
+        resolve({ status: code ?? 0, stdout, stderr });
+      });
+    });
   }
 
-  _runPython(args, extraEnv = null) {
-    const py = process.env.PYTHON;
-    let env = process.env;
-    if (extraEnv !== null) {
-      env = { ...process.env, ...extraEnv };
-    }
-    return spawnSync(py, args, { cwd: this._repoRoot(), encoding: "utf8", env });
-  }
-
-  _artifactRoot(testName) {
-    const root = path.join(this._repoRoot(), "tests", "client", "artifacts", `client_${testName}`);
-    fs.rmSync(root, { recursive: true, force: true });
-    fs.mkdirSync(root, { recursive: true });
-    return root;
-  }
-
-  _runCommand(command, cwd = null) {
-    const runCwd = cwd ? String(cwd) : this._repoRoot();
-    return spawnSync(String(command[0]), command.slice(1).map((x) => String(x)), { cwd: runCwd, encoding: "utf8", env: process.env });
-  }
-
-  _runLifecycle(args) {
-    return this._runPython(["-m", "nodejobs.client.lifecycle_ops", ...args]);
-  }
-
-  startServer(payload) {
+  async startServer(payload) {
     const specPayload = new ServerAliasSpec(payload);
     const serverAlias = specPayload.serverAlias;
     const spec = this.data.getServer(specPayload);
+    if (!spec.lifecycle) {
+      throw new Error("lifecycle_required_for_start");
+    }
+    const lifecycle = new LifecycleSpec(spec.lifecycle);
     const host = String(spec.host);
     const port = Number(spec.port);
-    const testName = String(spec.testName);
-    const root = this._artifactRoot(testName);
-    const dbPath = path.join(root, "job_db");
-    const jobId = `__CLIENT_LIFECYCLE__${testName}__${serverAlias}__${Date.now()}`;
+    const dbPath = String(lifecycle.dbPath);
+    const jobId = lifecycle.jobId ? String(lifecycle.jobId) : `__CLIENT_LIFECYCLE__${serverAlias}__${Date.now()}`;
+    const py = lifecycle.python ? String(lifecycle.python) : process.env.PYTHON;
+    if (!py) {
+      throw new Error("python_required_for_lifecycle");
+    }
     const args = [
       "--action", "start",
       "--db-path", dbPath,
-      "--command-json", JSON.stringify(spec.launchCommand),
+      "--command-json", JSON.stringify(lifecycle.launchCommand),
     ];
-    if (spec.launchCwd) {
-      args.push("--cwd", String(spec.launchCwd));
+    if (lifecycle.launchCwd) {
+      args.push("--cwd", String(lifecycle.launchCwd));
     }
-    const out = this._runPython(
-      ["-m", "nodejobs.client.lifecycle_ops", ...args],
+    const out = await this._runCommandAsync(
+      [py, "-m", "nodejobs.client.lifecycle_ops", ...args],
+      lifecycle.launchCwd ?? null,
       { NODEJOBS_LIFECYCLE_JOB_ID: jobId },
     );
     if (out.status !== 0) {
@@ -76,15 +73,30 @@ export class ClientService {
     if (!this.runtimeByAlias.has(serverAlias)) {
       throw new Error(`server_not_started:${serverAlias}`);
     }
+    const spec = this.data.getServer({ serverAlias });
+    if (!spec.lifecycle) {
+      throw new Error("lifecycle_required_for_wait");
+    }
+    const lifecycle = new LifecycleSpec(spec.lifecycle);
+    const py = lifecycle.python ? String(lifecycle.python) : process.env.PYTHON;
+    if (!py) {
+      throw new Error("python_required_for_lifecycle");
+    }
     const runtime = this.runtimeByAlias.get(serverAlias);
-    const out = this._runLifecycle([
-      "--action", "wait",
-      "--db-path", runtime.dbPath,
-      "--job-id", runtime.jobId,
-      "--host", runtime.host,
-      "--port", String(runtime.port),
-      "--timeout-s", String(timeoutS),
-    ]);
+    const out = await this._runCommandAsync(
+      [
+        py,
+        "-m",
+        "nodejobs.client.lifecycle_ops",
+        "--action", "wait",
+        "--db-path", runtime.dbPath,
+        "--job-id", runtime.jobId,
+        "--host", runtime.host,
+        "--port", String(runtime.port),
+        "--timeout-s", String(timeoutS),
+      ],
+      lifecycle.launchCwd ?? null,
+    );
     if (out.status !== 0) {
       throw new Error(out.stderr || out.stdout);
     }
@@ -117,7 +129,12 @@ export class ClientService {
     if (transport === "mcp") {
       const baseUrl = String(server.baseUrl).replace(/\/+$/, "");
       const mcpPath = String(server.path).trim();
-      const out = this._runPython([
+      const py = (server.lifecycle && server.lifecycle.python) ? String(server.lifecycle.python) : process.env.PYTHON;
+      if (!py) {
+        throw new Error("python_required_for_mcp_bridge");
+      }
+      const out = await this._runCommandAsync([
+        py,
         "-m",
         "nodejobs.client.mcp_invoke",
         "--base-url",
@@ -143,7 +160,7 @@ export class ClientService {
       const prefix = server.launchCommand.slice(0, serveIdx).map((x) => String(x));
       if (prefix.length === 0) throw new Error("cli_launch_command_missing_prefix");
       const cliArgs = Object.entries(validatedData).map(([k, v]) => `${k}=${typeof v === "string" ? v : JSON.stringify(v)}`);
-      const out = this._runCommand([...prefix, String(invoke.commandId), ...cliArgs], server.launchCwd ?? null);
+      const out = await this._runCommandAsync([...prefix, String(invoke.commandId), ...cliArgs], server.launchCwd ?? null);
       if (out.status !== 0) throw new Error(`cli_invoke_failed:${out.status}\nstdout:\n${out.stdout}\nstderr:\n${out.stderr}`);
       const lines = out.stdout.split(/\r?\n/).map((s) => s.trim()).filter((s) => s.length > 0);
       if (lines.length === 0) throw new Error("cli_empty_stdout");
@@ -156,19 +173,35 @@ export class ClientService {
     throw new Error(`unsupported_transport:${transport}`);
   }
 
-  stopServer(payload) {
+  async stopServer(payload) {
     const specPayload = new ServerAliasSpec(payload);
     const serverAlias = specPayload.serverAlias;
     if (!this.runtimeByAlias.has(serverAlias)) {
       return { status: "ok" };
     }
+    const spec = this.data.getServer({ serverAlias });
     const runtime = this.runtimeByAlias.get(serverAlias);
-    const out = this._runLifecycle([
-      "--action", "stop",
-      "--db-path", runtime.dbPath,
-      "--job-id", runtime.jobId,
-      "--wait-time", "1",
-    ]);
+    if (!spec.lifecycle) {
+      this.runtimeByAlias.delete(serverAlias);
+      return { status: "ok" };
+    }
+    const lifecycle = new LifecycleSpec(spec.lifecycle);
+    const py = lifecycle.python ? String(lifecycle.python) : process.env.PYTHON;
+    if (!py) {
+      throw new Error("python_required_for_lifecycle");
+    }
+    const out = await this._runCommandAsync(
+      [
+        py,
+        "-m",
+        "nodejobs.client.lifecycle_ops",
+        "--action", "stop",
+        "--db-path", runtime.dbPath,
+        "--job-id", runtime.jobId,
+        "--wait-time", "1",
+      ],
+      lifecycle.launchCwd ?? null,
+    );
     this.runtimeByAlias.delete(serverAlias);
     if (out.status !== 0) {
       throw new Error(out.stderr || out.stdout);

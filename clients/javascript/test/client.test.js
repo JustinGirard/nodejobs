@@ -9,13 +9,7 @@ test("javascript client smoke", () => {
     new ClientData({
       servers: {
         hello: {
-          transport: "http",
-          host: "127.0.0.1",
           port: 8871,
-          baseUrl: "http://127.0.0.1:8871",
-          python: "python",
-          testName: "javascript_http_client",
-          path: "/mcp",
         },
       },
     }),
