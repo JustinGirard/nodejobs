@@ -18,6 +18,27 @@ public class ClientTests
         }
     }
 
+    private static HashSet<string> SelectedTransports()
+    {
+        var raw = Environment.GetEnvironmentVariable("CLIENT_TEST_TRANSPORTS");
+        if (raw == null)
+        {
+            return new HashSet<string>(new[] { "http", "mcp", "cli" });
+        }
+        var parts = raw.Split(',').Select(p => p.Trim().ToLowerInvariant()).ToList();
+        if (parts.Any(p => p.Length == 0))
+        {
+            throw new Exception("invalid_transport_filter_empty");
+        }
+        var allowed = new HashSet<string>(new[] { "http", "mcp", "cli" });
+        var unknown = parts.Where(p => !allowed.Contains(p)).ToList();
+        if (unknown.Count > 0)
+        {
+            throw new Exception($"invalid_transport_filter:{string.Join(",", unknown)}");
+        }
+        return new HashSet<string>(parts);
+    }
+
     [Fact]
     public void ClientClassesSmoke()
     {
@@ -142,12 +163,17 @@ public class ClientTests
             ),
             new ClientAuth()
         );
+        var selected = SelectedTransports();
         var cases = new List<(string alias, string mode, bool needsServer)>
         {
             ("http_case", "http", true),
             ("mcp_case", "mcp", true),
             ("cli_case", "cli", false),
-        };
+        }.Where(c => selected.Contains(c.mode)).ToList();
+        if (cases.Count == 0)
+        {
+            throw new Exception("no_transport_cases_selected");
+        }
         var offsets = new List<double> { 1.0, -2.5 };
 
         try

@@ -1,5 +1,5 @@
 # TestService.py
-from decelium_wallet.commands.BaseService import BaseService
+from nodejobs.dependencies.BaseService import BaseService
 import json
 from http.server import BaseHTTPRequestHandler, HTTPServer
 

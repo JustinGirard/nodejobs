@@ -89,6 +89,9 @@ This guide documents the cross-language client module in `clients/` and the clie
   - Recommended to set to the same interpreter used for Python tests.
 - `CLIENT_TEST_VERBOSE=1`:
   - Enables proof/debug lines in Python/JS/C# lifecycle tests.
+- `CLIENT_TEST_TRANSPORTS`:
+  - Internal transport filter used by lifecycle suites (`http,mcp,cli`).
+  - Normally set by `clients.python.test_runner`; only set manually when running suites directly.
 - `NODEJOBS_LIFECYCLE_JOB_ID`:
   - Internal lifecycle identifier (normally set by client code, not manually).
 
@@ -190,6 +193,16 @@ This guide documents the cross-language client module in `clients/` and the clie
 - Aggregate (Python + JS + C#):
   - `python -m clients.python.test_runner -v`
   - or installed script: `nodejobs-client-test -v`
+- Aggregate with language filter (`python,javascript,csharp`):
+  - `python -m clients.python.test_runner --language python`
+  - `python -m clients.python.test_runner --language javascript,csharp`
+- Aggregate with transport filter (`http,mcp,cli`):
+  - `python -m clients.python.test_runner --transport mcp`
+  - `python -m clients.python.test_runner --language javascript,csharp --transport http`
+  - `python -m clients.python.test_runner --language python,javascript --transport http,cli`
+- Filter behavior:
+  - Values are comma-separated and case-insensitive.
+  - Invalid or empty filter values fail fast with non-zero exit (no silent fallback/substitution).
 - Python only:
   - `python -m pytest tests/client -q`
 - JavaScript only:

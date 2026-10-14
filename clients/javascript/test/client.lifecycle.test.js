@@ -14,6 +14,22 @@ function dprint(line) {
   }
 }
 
+function selectedTransports() {
+  const raw = process.env.CLIENT_TEST_TRANSPORTS;
+  if (raw === undefined) {
+    return new Set(["http", "mcp", "cli"]);
+  }
+  const parts = raw.split(",").map((p) => p.trim().toLowerCase());
+  if (parts.some((p) => p.length === 0)) {
+    throw new Error("invalid_transport_filter_empty");
+  }
+  const unknown = parts.filter((p) => !["http", "mcp", "cli"].includes(p));
+  if (unknown.length > 0) {
+    throw new Error(`invalid_transport_filter:${unknown.join(",")}`);
+  }
+  return new Set(parts);
+}
+
 test("javascript client lifecycle + hello", async () => {
   const repoRoot = path.resolve(process.cwd(), "../..");
   const py = process.env.PYTHON;
@@ -96,11 +112,15 @@ test("javascript client lifecycle + hello", async () => {
     },
   });
   const client = new ClientService(data, new ClientAuth("local"));
+  const selected = selectedTransports();
   const cases = [
     { alias: "httpCase", mode: "http", needsServer: true },
     { alias: "mcpCase", mode: "mcp", needsServer: true },
     { alias: "cliCase", mode: "cli", needsServer: false },
-  ];
+  ].filter((c) => selected.has(c.mode));
+  if (cases.length === 0) {
+    throw new Error("no_transport_cases_selected");
+  }
   const offsets = [1, -2.5];
 
   try {

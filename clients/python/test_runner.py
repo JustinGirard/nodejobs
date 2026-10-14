@@ -12,6 +12,30 @@ from pathlib import Path
 from nodejobs.jobs import Jobs, JobRecord
 from typing import Callable
 
+SUPPORTED_LANGUAGES = ("python", "javascript", "csharp")
+SUPPORTED_TRANSPORTS = ("http", "mcp", "cli")
+
+
+def _parse_csv_filter(flag_name: str, raw: str | None, allowed: tuple[str, ...]) -> list[str]:
+    if raw is None:
+        return list(allowed)
+    text = raw.strip()
+    if len(text) == 0:
+        raise ValueError(f"{flag_name}_empty")
+    parts = [p.strip().lower() for p in text.split(",")]
+    if any(len(p) == 0 for p in parts):
+        raise ValueError(f"{flag_name}_contains_empty_value")
+    unknown = [p for p in parts if p not in allowed]
+    if len(unknown) > 0:
+        raise ValueError(f"{flag_name}_invalid:{','.join(unknown)}")
+    dedup: list[str] = []
+    seen: set[str] = set()
+    for p in parts:
+        if p not in seen:
+            dedup.append(p)
+            seen.add(p)
+    return dedup
+
 
 def _run_capture_via_jobs(
     suite_name: str,
@@ -264,7 +288,17 @@ def _suite_failed(rows: list[dict], exit_code: int) -> bool:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("-v", "--verbose", action="store_true")
+    parser.add_argument("--language", type=str, default=None)
+    parser.add_argument("--transport", type=str, default=None)
     args = parser.parse_args()
+    try:
+        selected_languages = _parse_csv_filter("language", args.language, SUPPORTED_LANGUAGES)
+        selected_transports = _parse_csv_filter("transport", args.transport, SUPPORTED_TRANSPORTS)
+    except ValueError as exc:
+        print(f"invalid_filter: {exc}")
+        return 2
+
+    transport_env = ",".join(selected_transports)
     repo_root = Path(__file__).resolve().parents[2]
     verbose = bool(args.verbose)
     out_dir = repo_root / "test-results" / "client-tests"
@@ -289,80 +323,103 @@ def main() -> int:
         py_cmd.append("-q")
 
     py_env = os.environ.copy()
+    py_env["CLIENT_TEST_TRANSPORTS"] = transport_env
     if verbose:
         py_env["CLIENT_TEST_VERBOSE"] = "1"
-    print("Python:")
-    try:
-        py_code, py_out = _run_capture_via_jobs(
-            suite_name="python",
-            command=py_cmd,
-            cwd=repo_root,
-            env=py_env,
-            timeout_s=240.0,
-            jobs_db_path=runner_jobs_db,
-            live_row_cb=_mk_live_row_printer("Python", show_proof=verbose),
-        )
-    except KeyboardInterrupt:
-        print("\nAGGREGATE - FAIL (interrupted)")
-        print(f"Logs: {out_dir}")
-        return 130
-    _write_text(out_dir / "python.log", py_out)
-    py_rows = _parse_pytest_junit(py_junit)
+    if "python" in selected_languages:
+        print("Python:")
+        try:
+            py_code, py_out = _run_capture_via_jobs(
+                suite_name="python",
+                command=py_cmd,
+                cwd=repo_root,
+                env=py_env,
+                timeout_s=240.0,
+                jobs_db_path=runner_jobs_db,
+                live_row_cb=_mk_live_row_printer("Python", show_proof=verbose),
+            )
+        except KeyboardInterrupt:
+            print("\nAGGREGATE - FAIL (interrupted)")
+            print(f"Logs: {out_dir}")
+            return 130
+        _write_text(out_dir / "python.log", py_out)
+        py_rows = _parse_pytest_junit(py_junit)
+    else:
+        print("Python: (skipped by --language)")
+        py_code = 0
+        py_rows = []
+        _write_text(out_dir / "python.log", "[SKIPPED] language filter excludes python\n")
 
     child_env = os.environ.copy()
     child_env["PYTHON"] = sys.executable
+    child_env["CLIENT_TEST_TRANSPORTS"] = transport_env
     if verbose:
         child_env["CLIENT_TEST_VERBOSE"] = "1"
 
-    print("JS:")
-    try:
-        js_code, js_out = _run_capture_via_jobs(
-            suite_name="javascript",
-            command=["node", "--test", "--test-reporter=tap", "test/client.test.js", "test/client.lifecycle.test.js"],
-            cwd=js_dir,
-            env=child_env,
-            timeout_s=180.0,
-            jobs_db_path=runner_jobs_db,
-            live_row_cb=_mk_live_row_printer("JS", show_proof=verbose),
-        )
-    except KeyboardInterrupt:
-        print("\nAGGREGATE - FAIL (interrupted)")
-        print(f"Logs: {out_dir}")
-        return 130
-    _write_text(out_dir / "javascript.log", js_out)
-    js_rows = _parse_node_tap(js_out)
-
-    print("C#:")
-    cs_cmd = ["dotnet", "test", "--logger", "trx;LogFileName=csharp-client.trx", "--results-directory", "test-results"]
-    if verbose:
-        cs_cmd.extend(["--logger", "console;verbosity=detailed"])
+    if "javascript" in selected_languages:
+        print("JS:")
+        try:
+            js_code, js_out = _run_capture_via_jobs(
+                suite_name="javascript",
+                command=["node", "--test", "--test-reporter=tap", "test/client.test.js", "test/client.lifecycle.test.js"],
+                cwd=js_dir,
+                env=child_env,
+                timeout_s=180.0,
+                jobs_db_path=runner_jobs_db,
+                live_row_cb=_mk_live_row_printer("JS", show_proof=verbose),
+            )
+        except KeyboardInterrupt:
+            print("\nAGGREGATE - FAIL (interrupted)")
+            print(f"Logs: {out_dir}")
+            return 130
+        _write_text(out_dir / "javascript.log", js_out)
+        js_rows = _parse_node_tap(js_out)
     else:
-        cs_cmd.extend(["--logger", "console;verbosity=normal"])
-    try:
-        cs_code, cs_out = _run_capture_via_jobs(
-            suite_name="csharp",
-            command=cs_cmd,
-            cwd=cs_dir,
-            env=child_env,
-            timeout_s=240.0,
-            jobs_db_path=runner_jobs_db,
-            live_row_cb=_mk_live_row_printer("C#", show_proof=verbose),
-        )
-    except KeyboardInterrupt:
-        print("\nAGGREGATE - FAIL (interrupted)")
-        print(f"Logs: {out_dir}")
-        return 130
-    _write_text(out_dir / "csharp.log", cs_out)
-    cs_rows = _parse_trx(cs_trx)
+        print("JS: (skipped by --language)")
+        js_code = 0
+        js_rows = []
+        _write_text(out_dir / "javascript.log", "[SKIPPED] language filter excludes javascript\n")
+
+    if "csharp" in selected_languages:
+        print("C#:")
+        cs_cmd = ["dotnet", "test", "--logger", "trx;LogFileName=csharp-client.trx", "--results-directory", "test-results"]
+        if verbose:
+            cs_cmd.extend(["--logger", "console;verbosity=detailed"])
+        else:
+            cs_cmd.extend(["--logger", "console;verbosity=normal"])
+        try:
+            cs_code, cs_out = _run_capture_via_jobs(
+                suite_name="csharp",
+                command=cs_cmd,
+                cwd=cs_dir,
+                env=child_env,
+                timeout_s=240.0,
+                jobs_db_path=runner_jobs_db,
+                live_row_cb=_mk_live_row_printer("C#", show_proof=verbose),
+            )
+        except KeyboardInterrupt:
+            print("\nAGGREGATE - FAIL (interrupted)")
+            print(f"Logs: {out_dir}")
+            return 130
+        _write_text(out_dir / "csharp.log", cs_out)
+        cs_rows = _parse_trx(cs_trx)
+    else:
+        print("C#: (skipped by --language)")
+        cs_code = 0
+        cs_rows = []
+        _write_text(out_dir / "csharp.log", "[SKIPPED] language filter excludes csharp\n")
 
     _print_suite("Python (final)", py_rows)
     _print_suite("JS (final)", js_rows)
     _print_suite("C# (final)", cs_rows)
 
     failed = 0
-    failed += 1 if _suite_failed(py_rows, py_code) else 0
-    failed += 1 if _suite_failed(js_rows, js_code) else 0
-    failed += 1 if _suite_failed(cs_rows, cs_code) else 0
+    if "python" in selected_languages:
+        failed += 1 if _suite_failed(py_rows, py_code) else 0
+    if "javascript" in selected_languages:
+        failed += 1 if _suite_failed(js_rows, js_code) else 0
+    if "csharp" in selected_languages:
+        failed += 1 if _suite_failed(cs_rows, cs_code) else 0
 
     print("")
     if failed:
