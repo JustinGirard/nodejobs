@@ -1,6 +1,7 @@
 import { ClientData, ServerAliasSpec, WaitReadySpec, InvokeSpec, LifecycleSpec } from "./ClientData.js";
 import { ClientAuth } from "./ClientAuth.js";
 import { spawn } from "node:child_process";
+import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 
 export class ClientService {
   constructor(data, auth) {
@@ -129,28 +130,28 @@ export class ClientService {
     if (transport === "mcp") {
       const baseUrl = String(server.baseUrl).replace(/\/+$/, "");
       const mcpPath = String(server.path).trim();
-      const py = (server.lifecycle && server.lifecycle.python) ? String(server.lifecycle.python) : process.env.PYTHON;
-      if (!py) {
-        throw new Error("python_required_for_mcp_bridge");
+      if (!mcpPath.startsWith("/")) {
+        throw new Error("server_path_must_start_with_slash");
       }
-      const out = await this._runCommandAsync([
-        py,
-        "-m",
-        "clients.python.mcp_invoke",
-        "--base-url",
-        baseUrl,
-        "--path",
-        mcpPath,
-        "--tool", String(invoke.commandId),
-        "--timeout-s",
-        "8",
-        "--data-json",
-        JSON.stringify(validatedData),
-      ]);
-      if (out.status !== 0) {
-        throw new Error(out.stderr || out.stdout);
+      const client = new Client({ name: "nodejobs-client-js", version: "0.0.1" });
+      const transportClient = new StreamableHTTPClientTransport(new URL(`${baseUrl}${mcpPath}`));
+      try {
+        await client.connect(transportClient);
+        const result = await client.callTool({ name: String(invoke.commandId), arguments: validatedData });
+        if (result.structuredContent !== undefined && result.structuredContent !== null) {
+          return result.structuredContent;
+        }
+        if (Array.isArray(result.content) && result.content.length === 1 && result.content[0].type === "text") {
+          const raw = String(result.content[0].text).trim();
+          try { return JSON.parse(raw); } catch (_) {}
+          const n = Number(raw);
+          if (!Number.isNaN(n)) return n;
+          return raw;
+        }
+        throw new Error("mcp_response_missing_payload");
+      } finally {
+        await client.close();
       }
-      return JSON.parse(out.stdout).data;
     }
 
     if (transport === "cli") {

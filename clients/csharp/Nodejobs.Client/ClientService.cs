@@ -4,6 +4,9 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Net.Http;
 using System.Text;
+using System.Text.Json;
+using ModelContextProtocol.Client;
+using ModelContextProtocol.Protocol;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
@@ -157,22 +160,25 @@ public class ClientService
 
         if (transport == "mcp")
         {
-            var py = ResolvePythonForBridge(server);
-            var mcpReq = DJson.Stringify(body);
-            var args = new List<string>
+            var route = server.Path.Trim();
+            if (!route.StartsWith("/")) throw new Exception("server_path_must_start_with_slash");
+            var endpoint = new Uri($"{baseUrl}{route}");
+            var clientTransport = new HttpClientTransport(new HttpClientTransportOptions
             {
-                "-m", "clients.python.mcp_invoke",
-                "--base-url", baseUrl,
-                "--path", server.Path,
-                "--tool", invoke.CommandId,
-                "--data-json", mcpReq,
-                "--timeout-s", "8",
-            };
-            var mcp = await RunProcessAsync(py, args, null);
-            if (mcp.ExitCode != 0) throw new Exception(mcp.StdErr + mcp.StdOut);
-            var mcpObj = DJson.Parse(mcp.StdOut.Trim());
-            var mcpData = DJson.TryGetKeyAt(mcpObj, new List<string> { "data" }, null);
-            return mcpData;
+                Endpoint = endpoint,
+                TransportMode = HttpTransportMode.StreamableHttp,
+            });
+            await using var mcpClient = await McpClient.CreateAsync(clientTransport);
+            var mcpResult = await mcpClient.CallToolAsync(invoke.CommandId, body);
+            if (mcpResult.StructuredContent.HasValue)
+            {
+                return DJson.ParseGeneric(mcpResult.StructuredContent.Value.GetRawText());
+            }
+            if (mcpResult.Content.Count == 1 && mcpResult.Content[0] is TextContentBlock textBlock)
+            {
+                return ParseJsonLike(textBlock.Text);
+            }
+            throw new Exception("mcp_response_missing_payload");
         }
 
         if (transport == "cli")
@@ -242,24 +248,6 @@ public class ClientService
     public Dictionary<string, string> WaitReady(Dictionary<string, object> payload) => WaitReadyAsync(payload).GetAwaiter().GetResult();
     public object Invoke(Dictionary<string, object> payload) => InvokeAsync(payload).GetAwaiter().GetResult();
     public Dictionary<string, string> StopServer(Dictionary<string, object> payload) => StopServerAsync(payload).GetAwaiter().GetResult();
-
-    private string ResolvePythonForBridge(ServerSpec server)
-    {
-        if (server.Lifecycle != null)
-        {
-            var lifecycle = new LifecycleSpec(server.Lifecycle);
-            if (!string.IsNullOrWhiteSpace(lifecycle.Python))
-            {
-                return lifecycle.Python;
-            }
-        }
-        var py = Environment.GetEnvironmentVariable("PYTHON");
-        if (string.IsNullOrWhiteSpace(py))
-        {
-            throw new Exception("python_required_for_mcp_bridge");
-        }
-        return py;
-    }
 
     private static object ParseJsonLike(string raw)
     {
