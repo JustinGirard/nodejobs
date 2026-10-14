@@ -9,6 +9,8 @@ import asyncio
 import json
 import os
 import sys
+import threading
+import traceback
 from .client_auth import ClientAuth
 from .network_http import HttpNetworkService
 from .network_cli import CliNetworkService
@@ -48,6 +50,11 @@ class ClientService(CachingComponent):
         self.awake()
         self.data = data
         self.auth = auth
+        self._invoke_loop = None
+        self._invoke_thread = None
+        self._invoke_lock = threading.Lock()
+        self._invoke_futures = set()
+        self._closed = False
         self._bind_defaults()
         runtime_map = self.load_cache("runtime_by_alias")
         if runtime_map is None:
@@ -78,6 +85,29 @@ class ClientService(CachingComponent):
         if key not in self._network_registry:
             raise Exception(f"unsupported_network_service:{key}")
         return self._network_registry[key]
+
+    def _ensure_invoke_loop(self):
+        with self._invoke_lock:
+            if self._closed:
+                raise Exception("client_closed")
+            if self._invoke_loop is not None and self._invoke_thread is not None and self._invoke_thread.is_alive():
+                return self._invoke_loop
+            ready = threading.Event()
+
+            def _runner():
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                with self._invoke_lock:
+                    self._invoke_loop = loop
+                ready.set()
+                loop.run_forever()
+                loop.close()
+
+            thread = threading.Thread(target=_runner, name="nodejobs-client-invoke-loop", daemon=True)
+            self._invoke_thread = thread
+            thread.start()
+            ready.wait()
+            return self._invoke_loop
 
     async def start_server_async(self, payload):
         payload = ServerAliasSpec(payload)
@@ -210,8 +240,59 @@ class ClientService(CachingComponent):
     def wait_ready(self, payload):
         return asyncio.run(self.wait_ready_async(payload))
 
-    def invoke(self, payload):
-        return asyncio.run(self.invoke_async(payload))
+    def invoke(self, payload, on_success=None, on_failure=None, on_disconnect=None, on_progress=None):
+        """
+        Submit invoke_async() on the client-owned background loop and return a native Future.
+        Callbacks execute on the background loop thread and must not block.
+        """
+        loop = self._ensure_invoke_loop()
+        future = asyncio.run_coroutine_threadsafe(self.invoke_async(payload), loop)
+        with self._invoke_lock:
+            if self._closed:
+                future.cancel()
+                raise Exception("client_closed")
+            self._invoke_futures.add(future)
+
+        def _done(done_future):
+            with self._invoke_lock:
+                self._invoke_futures.discard(done_future)
+            try:
+                result = done_future.result()
+            except Exception as exc:
+                if on_failure is not None:
+                    try:
+                        on_failure(exc)
+                    except Exception as cb_exc:
+                        traceback.print_exception(type(cb_exc), cb_exc, cb_exc.__traceback__, file=sys.stderr)
+                else:
+                    traceback.print_exception(type(exc), exc, exc.__traceback__, file=sys.stderr)
+                return
+            if on_success is not None:
+                try:
+                    on_success(result)
+                except Exception as cb_exc:
+                    traceback.print_exception(type(cb_exc), cb_exc, cb_exc.__traceback__, file=sys.stderr)
+
+        future.add_done_callback(_done)
+        return future
+
+    def close(self):
+        with self._invoke_lock:
+            if self._closed:
+                return
+            self._closed = True
+            futures = list(self._invoke_futures)
+            self._invoke_futures.clear()
+            loop = self._invoke_loop
+            thread = self._invoke_thread
+        for future in futures:
+            future.cancel()
+        if loop is not None and thread is not None and thread.is_alive():
+            loop.call_soon_threadsafe(loop.stop)
+            thread.join(timeout=5.0)
+        with self._invoke_lock:
+            self._invoke_loop = None
+            self._invoke_thread = None
 
     def stop_server(self, payload):
         return asyncio.run(self.stop_server_async(payload))
