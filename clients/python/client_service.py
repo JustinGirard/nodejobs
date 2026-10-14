@@ -97,8 +97,7 @@ class ClientService(CachingComponent):
             def _runner():
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
-                with self._invoke_lock:
-                    self._invoke_loop = loop
+                self._invoke_loop = loop
                 ready.set()
                 loop.run_forever()
                 loop.close()
