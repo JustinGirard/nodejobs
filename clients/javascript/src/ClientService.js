@@ -55,7 +55,7 @@ export class ClientService {
       args.push("--cwd", String(lifecycle.launchCwd));
     }
     const out = await this._runCommandAsync(
-      [py, "-m", "nodejobs.client.lifecycle_ops", ...args],
+      [py, "-m", "clients.python.lifecycle_ops", ...args],
       lifecycle.launchCwd ?? null,
       { NODEJOBS_LIFECYCLE_JOB_ID: jobId },
     );
@@ -87,7 +87,7 @@ export class ClientService {
       [
         py,
         "-m",
-        "nodejobs.client.lifecycle_ops",
+        "clients.python.lifecycle_ops",
         "--action", "wait",
         "--db-path", runtime.dbPath,
         "--job-id", runtime.jobId,
@@ -136,7 +136,7 @@ export class ClientService {
       const out = await this._runCommandAsync([
         py,
         "-m",
-        "nodejobs.client.mcp_invoke",
+        "clients.python.mcp_invoke",
         "--base-url",
         baseUrl,
         "--path",
@@ -194,7 +194,7 @@ export class ClientService {
       [
         py,
         "-m",
-        "nodejobs.client.lifecycle_ops",
+        "clients.python.lifecycle_ops",
         "--action", "stop",
         "--db-path", runtime.dbPath,
         "--job-id", runtime.jobId,

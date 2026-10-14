@@ -52,7 +52,7 @@ public class ClientService
 
         var runArgs = new List<string>
         {
-            "-m", "nodejobs.client.lifecycle_ops",
+            "-m", "clients.python.lifecycle_ops",
             "--action", "start",
             "--db-path", dbPath,
             "--command-json", DJson.Stringify(lifecycle.LaunchCommand),
@@ -105,7 +105,7 @@ public class ClientService
 
         var args = new List<string>
         {
-            "-m", "nodejobs.client.lifecycle_ops",
+            "-m", "clients.python.lifecycle_ops",
             "--action", "wait",
             "--db-path", runtime.DbPath,
             "--job-id", runtime.JobId,
@@ -161,7 +161,7 @@ public class ClientService
             var mcpReq = DJson.Stringify(body);
             var args = new List<string>
             {
-                "-m", "nodejobs.client.mcp_invoke",
+                "-m", "clients.python.mcp_invoke",
                 "--base-url", baseUrl,
                 "--path", server.Path,
                 "--tool", invoke.CommandId,
@@ -226,7 +226,7 @@ public class ClientService
         }
         var args = new List<string>
         {
-            "-m", "nodejobs.client.lifecycle_ops",
+            "-m", "clients.python.lifecycle_ops",
             "--action", "stop",
             "--db-path", runtime.DbPath,
             "--job-id", runtime.JobId,

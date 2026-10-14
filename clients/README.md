@@ -10,7 +10,7 @@ This guide documents the cross-language client module in `clients/` and the clie
   - MCP
   - CLI
 - Exposes language-specific client APIs with similar behavior:
-  - Python: `nodejobs.client.ClientService`
+  - Python: `clients.python.ClientService`
   - JavaScript: `clients/javascript/src/ClientService.js`
   - C#: `clients/csharp/Nodejobs.Client/ClientService.cs`
 - Supports server lifecycle orchestration for test/dev scenarios:
@@ -188,7 +188,7 @@ This guide documents the cross-language client module in `clients/` and the clie
 
 ### Common commands
 - Aggregate (Python + JS + C#):
-  - `python -m nodejobs.client.test_runner -v`
+  - `python -m clients.python.test_runner -v`
   - or installed script: `nodejobs-client-test -v`
 - Python only:
   - `python -m pytest tests/client -q`
