@@ -1,0 +1,7 @@
+pip install nodejobs
+pip install git+https://github.com/JustinGirard/nodejobs/@master
+git clone https://github.com/JustinGirard/nodejobs
+ 
+-- [ ] fix job tracking
+-- [ ] Remove BaseData and make the base library public
+ 

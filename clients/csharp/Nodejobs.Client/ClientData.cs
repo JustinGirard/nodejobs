@@ -21,13 +21,13 @@ public sealed class ServerAliasSpec : BaseData
         return input;
     }
 
-    protected override object DoValidation(string key, object value)
+    protected override (object Value, string Message) DoValidation(string key, object value)
     {
         if (key == f_server_alias && ((string)value).Length == 0)
         {
             throw new Exception("server_alias_required");
         }
-        return value;
+        return (value, "");
     }
 }
 
@@ -59,7 +59,7 @@ public sealed class WaitReadySpec : BaseData
         return input;
     }
 
-    protected override object DoValidation(string key, object value)
+    protected override (object Value, string Message) DoValidation(string key, object value)
     {
         if (key == f_server_alias && ((string)value).Length == 0)
         {
@@ -69,7 +69,7 @@ public sealed class WaitReadySpec : BaseData
         {
             throw new Exception("timeout_s_must_be_positive");
         }
-        return value;
+        return (value, "");
     }
 }
 
@@ -105,7 +105,7 @@ public sealed class InvokeSpec : BaseData
         return input;
     }
 
-    protected override object DoValidation(string key, object value)
+    protected override (object Value, string Message) DoValidation(string key, object value)
     {
         if (key == f_server_alias && ((string)value).Length == 0)
         {
@@ -115,7 +115,7 @@ public sealed class InvokeSpec : BaseData
         {
             throw new Exception("command_id_required");
         }
-        return value;
+        return (value, "");
     }
 }
 
@@ -126,7 +126,7 @@ public sealed class CommandSpec : BaseData
     public const string f_transport_command = "transport_command";
 
     public List<string> RequiredParams => Get<List<string>>(f_required_params);
-    public List<string> OptionalParams => GetOptional<List<string>>(f_optional_params) ?? new List<string>();
+    public List<string> OptionalParams => Get<List<string>>(f_optional_params);
     public string? TransportCommand => GetOptional<string>(f_transport_command);
 
     public CommandSpec(Dictionary<string, object> input) : base(input) { }
@@ -142,7 +142,12 @@ public sealed class CommandSpec : BaseData
         [f_transport_command] = typeof(string),
     };
 
-    protected override object DoValidation(string key, object value)
+    protected override Dictionary<string, object> Defaults() => new()
+    {
+        [f_optional_params] = new List<string>(),
+    };
+
+    protected override (object Value, string Message) DoValidation(string key, object value)
     {
         if (key == f_required_params || key == f_optional_params)
         {
@@ -155,7 +160,7 @@ public sealed class CommandSpec : BaseData
                 }
             }
         }
-        return value;
+        return (value, "");
     }
 }
 
@@ -172,6 +177,7 @@ public sealed class ServerSpec : BaseData
     public const string f_launch_cwd = "launch_cwd";
     public const string f_python = "python";
     public const string f_test_name = "test_name";
+    public const string f_network_service = "network_service";
     public const string f_lifecycle = "lifecycle";
 
     public string Transport => Get<string>(f_transport);
@@ -181,8 +187,9 @@ public sealed class ServerSpec : BaseData
     public string BaseUrl => Get<string>(f_base_url);
     public string? Python => GetOptional<string>(f_python);
     public string? TestName => GetOptional<string>(f_test_name);
+    public string? NetworkService => GetOptional<string>(f_network_service);
     public string Path => Get<string>(f_path);
-    public Dictionary<string, object> Commands => GetOptional<Dictionary<string, object>>(f_commands) ?? new Dictionary<string, object>();
+    public Dictionary<string, object> Commands => Get<Dictionary<string, object>>(f_commands);
     public List<string>? LaunchCommand => GetOptional<List<string>>(f_launch_command);
     public string? LaunchCwd => GetOptional<string>(f_launch_cwd);
     public Dictionary<string, object>? Lifecycle => GetOptional<Dictionary<string, object>>(f_lifecycle);
@@ -206,7 +213,13 @@ public sealed class ServerSpec : BaseData
         [f_launch_cwd] = typeof(string),
         [f_python] = typeof(string),
         [f_test_name] = typeof(string),
+        [f_network_service] = typeof(string),
         [f_lifecycle] = typeof(Dictionary<string, object>),
+    };
+
+    protected override Dictionary<string, object> Defaults() => new()
+    {
+        [f_commands] = new Dictionary<string, object>(),
     };
 
     protected override Dictionary<string, object> DoPreProcess(Dictionary<string, object> input)
@@ -239,12 +252,15 @@ public sealed class ServerSpec : BaseData
         return input;
     }
 
-    protected override object DoValidation(string key, object value)
+    protected override (object Value, string Message) DoValidation(string key, object value)
     {
         if (key == f_transport && (value is not string s0 || s0.Length == 0)) throw new Exception("transport_required");
         if (key == f_host && (value is not string s1 || s1.Length == 0)) throw new Exception("host_required");
+        if (key == f_base_url && value is string s2 && s2.Length == 0) throw new Exception("base_url_empty");
         if (key == f_path && (value is not string s5 || s5.Length == 0)) throw new Exception("path_required");
-        return value;
+        if (key == f_network_service && value is string s3 && s3.Length == 0) throw new Exception("network_service_required_when_set");
+        if (key == f_launch_command && value is List<string> items && items.Count == 0) throw new Exception("launch_command_empty");
+        return (value, "");
     }
 }
 
@@ -305,11 +321,15 @@ public sealed class CommandPayloadSpec : BaseData
         [f_data] = typeof(Dictionary<string, object>),
     };
 
-    protected override object DoValidation(string key, object value)
+    protected override (object Value, string Message) DoValidation(string key, object value)
     {
         if (key == f_data)
         {
             var dirty = GetDirtyDict();
+            if (!dirty.ContainsKey(f_required_params))
+            {
+                throw new Exception("required_params_missing");
+            }
             var required = (List<string>)dirty[f_required_params];
             var data = (Dictionary<string, object>)value;
             foreach (var req in required)
@@ -320,7 +340,7 @@ public sealed class CommandPayloadSpec : BaseData
                 }
             }
         }
-        return value;
+        return (value, "");
     }
 }
 

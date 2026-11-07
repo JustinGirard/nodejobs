@@ -42,6 +42,9 @@ class BaseField:
 class BaseData(dict, metaclass=BaseDataMeta):
     _timed_gate_next_allowed_ts = {}
     _timed_gate_lock = threading.Lock()
+    _diagnostics = {}
+    _diagnostic_starts = {}
+    _diagnostic_ends = {}
 
     @classmethod
     def timed_gate_reserve_lock(cls, key: str, cooldown_s: float) -> bool:
@@ -250,47 +253,6 @@ class BaseData(dict, metaclass=BaseDataMeta):
         # fallback: reject
         return False
 
-    '''
-    def _is_valid_type(cls,value, expected_type):
-        origin = get_origin(expected_type)
-        args = get_args(expected_type)
-
-        if expected_type is Any:
-            return True
-
-        # Handle Optional / Union
-        if origin is Union:
-            return any(cls._is_valid_type(value, arg) for arg in args)
-
-        # Handle List[...] and list
-        if origin is list or expected_type is list:
-            if not isinstance(value, list):
-                return False
-            item_type = args[0] if args else Any
-            return all(cls._is_valid_type(v, item_type) for v in value)
-
-        # Handle Dict[...] and dict
-        if origin is dict or expected_type is dict:
-            if not isinstance(value, dict):
-                return False
-            key_type = args[0] if args else Any
-            val_type = args[1] if len(args) > 1 else Any
-            return all(cls._is_valid_type(k, key_type) and cls._is_valid_type(v, val_type) for k, v in value.items())
-
-        # Handle Tuple[...] (optional)
-        if origin is tuple:
-            if not isinstance(value, tuple):
-                return False
-            if len(args) == 2 and args[1] is Ellipsis:  # Tuple[int, ...]
-                return all(cls._is_valid_type(v, args[0]) for v in value)
-            return len(args) == len(value) and all(cls._is_valid_type(v, t) for v, t in zip(value, args))
-
-        # Fallback to regular isinstance for raw types
-        if isinstance(expected_type, type):
-            return isinstance(value, expected_type)
-
-        return False
-    '''
     def validate_and_convert(self, key, expected_type, init_dict):
         assert type(expected_type) != str, f" {expected_type} is actually a string?"
         if key == '*':
@@ -320,7 +282,10 @@ class BaseData(dict, metaclass=BaseDataMeta):
             #print(key)
             #print(f"your last defaults {self.get_all_defaults() }")
             #print(f"current value {new_val}")
-            if key in self.get_all_defaults() and new_val == self.get_all_defaults()[key]:
+            defaults = self.get_all_defaults()
+            if key in defaults and defaults[key] is None:
+                new_val = defaults[key] # Canonical nullish representation (Python supports None only)
+            elif key in defaults and new_val == defaults[key]:
                 pass # Allowed to be empty default value
             elif (expected_type == Any):
                 pass # Allowed to be empty default value
@@ -402,6 +367,61 @@ class BaseData(dict, metaclass=BaseDataMeta):
         allowed_keys = set(required) | set(optional)
         cleaned_dict = {k: self[k] for k in allowed_keys if k in self}
         return self.__class__(cleaned_dict)
+
+    @staticmethod
+    def DiagnosticPrint(title, index, start_id, end_id, description_of_location, interesting_conditionals, repeat_delay):
+        key = str(index)
+        now_ts = time.time()
+
+        delay = repeat_delay
+        if delay is not None:
+            try:
+                delay = float(delay)
+            except Exception as exc:
+                raise ValueError("invalid_repeat_delay") from exc
+            if delay < 0 and delay != -1:
+                raise ValueError("invalid_repeat_delay")
+
+        existing = BaseData._diagnostics.get(key)
+        allowed = False
+        if delay is None or delay == 0:
+            allowed = True
+        elif delay == -1:
+            allowed = existing is None
+        else:
+            if existing is None:
+                allowed = True
+            else:
+                last_ts = float(existing["timestamp"])
+                allowed = (now_ts - last_ts) >= delay
+
+        if not allowed:
+            return False
+
+        record = {
+            "title": title,
+            "index": index,
+            "start_id": start_id,
+            "end_id": end_id,
+            "description_of_location": description_of_location,
+            "interesting_conditionals": interesting_conditionals,
+            "timestamp": now_ts,
+        }
+        print(record)
+        BaseData._diagnostics[key] = record
+        if start_id is not None:
+            BaseData._diagnostic_starts[key] = record
+        if end_id is not None:
+            BaseData._diagnostic_ends[key] = record
+        return True
+
+    @staticmethod
+    def DiagnosticDump():
+        return {
+            "diagnostics": {k: dict(v) for k, v in BaseData._diagnostics.items()},
+            "starts": {k: dict(v) for k, v in BaseData._diagnostic_starts.items()},
+            "ends": {k: dict(v) for k, v in BaseData._diagnostic_ends.items()},
+        }
 
 
     def do_pre_process(self,in_dict):
@@ -542,6 +562,7 @@ class BaseData(dict, metaclass=BaseDataMeta):
 
     def to_safe_dict_LLMS_DONT_USE(self, target_dict=None):
         """
+        THIS STRIPS KEYS. NOWT FOR GENERAL USE!!!!!!
         Recursively convert this mapping to built-ins, using to_safe_value.
         """
         if target_dict is None:
@@ -555,6 +576,7 @@ class BaseData(dict, metaclass=BaseDataMeta):
 
     def to_safe_list(self, target_list):
         """
+        THIS STRIPS KEYS. NOWT FOR GENERAL USE!!!!!!
         Recursively convert a list of mixed elements to built-ins.
         """
         return [self.to_safe_value(None,val) for val in target_list]
@@ -758,587 +780,11 @@ class FloatRange(BaseData):
 
 
 # --------------------------------------------
-# from functools import wraps
-# from types import FunctionType
-# from typing import get_origin, get_args, Any, Union, Callable
+#  
+# EXAMPLES 
+# 
+#
 
-# import json
-# import os
-# import re
-# import io
-
-
-# def auto_c(parameter_type):
-#     def decorator(func):
-#         @wraps(func)
-#         def wrapper(*args, **kwargs):
-#             new_args = [
-#                 parameter_type(arg)
-#                 if isinstance(arg, dict) and parameter_type is not dict
-#                 else arg
-#                 for arg in args
-#             ]
-#             new_kwargs = {
-#                 k: parameter_type(v)
-#                 if isinstance(v, dict) and parameter_type is not dict
-#                 else v
-#                 for k, v in kwargs.items()
-#             }
-#             return func(*new_args, **new_kwargs)
-
-#         return wrapper
-
-#     return decorator
-
-
-# # TODO - Remove duplicate code
-
-
-# class BaseDataMeta(type):
-#     def __new__(mcs, name, bases, namespace):
-#         for field in namespace.get("__annotations__", {}):
-#             namespace.setdefault(field, field)
-#         return super().__new__(mcs, name, bases, namespace)
-
-
-# from functools import lru_cache
-
-
-# class BaseField:
-#     def __new__(cls, value):
-#         return value
-
-
-# class BaseData(dict, metaclass=BaseDataMeta):
-#     @classmethod
-#     @lru_cache(maxsize=None)
-#     def get_annotations(cls):
-#         anns = {}
-#         for base in reversed(cls.__mro__):
-#             anns.update(getattr(base, "__annotations__", {}) or {})
-#         return anns
-
-#     def get_all_keys(self):
-#         self._internal_defaults = {}
-#         """
-#         Merge annotation-based required keys with get_keys().
-#         Any annotated attribute is treated as a required field.
-#         If a key appears both in annotations and in get_keys(), raise an error.
-#         """
-#         anns = self.get_annotations()
-
-#         for key in anns:
-#             setattr(self, f"f_{key}", key)
-#         req_add = {}
-#         opt_add = {}
-#         for k in anns:
-#             if type(anns[k]) == tuple:
-#                 assert len(anns[k]) == 2
-#                 opt_add[k] = anns[k][0]
-#                 assert type(anns[k][0]) != str
-#                 self._internal_defaults[k] = anns[k][1]
-#             else:
-#                 req_add[k] = anns[k]
-#                 assert type(anns[k]) != str
-#         for key, expected_type in req_add.items():
-#             assert type(expected_type) != str
-#         for key, expected_type in opt_add.items():
-#             assert type(expected_type) != str
-
-#         req, opt = self.get_keys()
-#         conflicts = set(anns) & (set(req) | set(opt))
-#         if conflicts:
-#             raise ValueError(f"Conflicting key definitions for: {conflicts}")
-#         merged_required = {**req_add, **req}
-#         merged_opt = {**opt_add, **opt}
-#         return merged_required, merged_opt
-
-#     def __setattr__(self, name, value):
-#         """
-#         If `name` is in annotations, attempt to set via BaseData dict interface
-#         by calling set_annotation. Otherwise, fall back to normal attribute set.
-#         """
-#         anns = getattr(self.__class__, "__annotations__", {}) or {}
-#         if name in anns:
-#             self.__setitem__(name, value)
-#             return
-#         super().__setattr__(name, value)
-
-#     @staticmethod
-#     def do_raise(description=None):
-#         if description == None:
-#             description = "Invalid corruption type"
-#         raise ValueError(description)
-
-#     def get_all_defaults(self):
-#         # defaults = {'id': "aaa", 'name': 3,'age': 33}
-#         defaults = self._internal_defaults.copy()
-#         defaults.update(self.get_defaults())
-#         return defaults
-
-#     def get_defaults(self):
-#         # defaults = {'id': "aaa", 'name': 3,'age': 33}
-#         defaults = {}
-#         return defaults
-
-#     def get_keys(self):
-#         required = {}
-#         optional = {}
-#         # required = {'id': str, 'name': int}
-#         # optional = {'age': int, 'interests': dict}
-#         return required, optional
-
-#     def do_every_validation(self, key, value):
-#         return value, ""
-
-#     def do_validation(self, key, value):
-#         return value, ""
-
-#     def do_get_filtered(self, key, value):
-#         return value
-
-#     @classmethod
-#     def valid_type(cls, value: Any, annotation) -> bool:
-#         """
-#         Recursively check whether `value` conforms to the typing annotation.
-#         Supports:
-#         - Any
-#         - Union / Optional
-#         - list[T]
-#         - dict[K,V]
-#         - tuple[...] (including Tuple[T, ...])
-#         - plain classes
-#         """
-#         origin = get_origin(annotation)
-#         args = get_args(annotation)
-
-#         # 1) Any always passes
-#         if annotation is Any:
-#             return True
-
-#         # 2) Union / Optional
-#         if origin is Union:
-#             # print("valid_type UNION")
-#             return any(cls.valid_type(value, arg) for arg in args)
-
-#         # 3) list
-#         if origin is list or annotation is list:
-#             if not isinstance(value, list):
-#                 return False
-#             (elem_type,) = args or (Any,)
-#             return all(cls.valid_type(item, elem_type) for item in value)
-
-#         # 4) dict
-#         if origin is dict or annotation is dict:
-#             if not isinstance(value, dict):
-#                 return False
-#             key_t, val_t = args if len(args) == 2 else (Any, Any)
-#             return all(
-#                 cls.valid_type(k, key_t) and cls.valid_type(v, val_t)
-#                 for k, v in value.items()
-#             )
-
-#         # 5) tuple
-#         if origin is tuple:
-#             if not isinstance(value, tuple):
-#                 return False
-#             # variable-length Tuple[T, ...]
-#             if len(args) == 2 and args[1] is Ellipsis:
-#                 return all(cls.valid_type(item, args[0]) for item in value)
-#             # fixed-length
-#             if len(args) != len(value):
-#                 return False
-#             return all(cls.valid_type(item, t) for item, t in zip(value, args))
-
-#         if annotation is Callable or origin is Callable:
-#             return callable(value)
-
-#         # 6) plain class
-#         if isinstance(annotation, type):
-#             return isinstance(value, annotation)
-
-#         # fallback: reject
-#         return False
-
-#     """
-#     def _is_valid_type(cls,value, expected_type):
-#         origin = get_origin(expected_type)
-#         args = get_args(expected_type)
-
-#         if expected_type is Any:
-#             return True
-
-#         # Handle Optional / Union
-#         if origin is Union:
-#             return any(cls._is_valid_type(value, arg) for arg in args)
-
-#         # Handle List[...] and list
-#         if origin is list or expected_type is list:
-#             if not isinstance(value, list):
-#                 return False
-#             item_type = args[0] if args else Any
-#             return all(cls._is_valid_type(v, item_type) for v in value)
-
-#         # Handle Dict[...] and dict
-#         if origin is dict or expected_type is dict:
-#             if not isinstance(value, dict):
-#                 return False
-#             key_type = args[0] if args else Any
-#             val_type = args[1] if len(args) > 1 else Any
-#             return all(cls._is_valid_type(k, key_type) and cls._is_valid_type(v, val_type) for k, v in value.items())
-
-#         # Handle Tuple[...] (optional)
-#         if origin is tuple:
-#             if not isinstance(value, tuple):
-#                 return False
-#             if len(args) == 2 and args[1] is Ellipsis:  # Tuple[int, ...]
-#                 return all(cls._is_valid_type(v, args[0]) for v in value)
-#             return len(args) == len(value) and all(cls._is_valid_type(v, t) for v, t in zip(value, args))
-
-#         # Fallback to regular isinstance for raw types
-#         if isinstance(expected_type, type):
-#             return isinstance(value, expected_type)
-
-#         return False
-#     """
-
-#     def validate_and_convert(self, key, expected_type, init_dict):
-#         assert type(expected_type) != str, f" {expected_type} is actually a string?"
-#         if key == "*":
-#             return
-#         if not key in init_dict.keys():
-#             value = None
-#         else:
-#             value = init_dict[key]
-#         """Validates and converts a single key value based on its expected type."""
-
-#         if isinstance(expected_type, FunctionType):
-#             if expected_type.__code__.co_argcount == 1:
-#                 value = expected_type(value)
-#             else:
-#                 value = expected_type(self, value)
-#         elif isinstance(expected_type, type) and (
-#             issubclass(expected_type, BaseData) and isinstance(value, dict)
-#         ):
-#             value = expected_type(value)
-
-#         origin = get_origin(expected_type)
-#         args = get_args(expected_type)
-#         if origin is list and args and isinstance(value, list):
-#             elem_t = args[0]
-#             if isinstance(elem_t, type) and issubclass(elem_t, BaseData):
-#                 wrapped = []
-#                 for item in value:
-#                     if isinstance(item, dict):
-#                         wrapped.append(elem_t(item))
-#                     elif isinstance(item, elem_t):
-#                         wrapped.append(item)
-#                     else:
-#                         raise TypeError(
-#                             f"Invalid list entry type for '{key}': {type(item)}"
-#                         )
-#                 value = wrapped
-#         new_val, message = self.do_validation(key, value)
-#         # Check if you have an error message from being Null. None is allowed by default, unless the implementer returns a validation error text.
-#         if new_val is None:
-#             # print(key)
-#             # print(f"your last defaults {self.get_all_defaults() }")
-#             # print(f"current value {new_val}")
-#             if (
-#                 key in self.get_all_defaults()
-#                 and new_val == self.get_all_defaults()[key]
-#             ):
-#                 pass  # Allowed to be empty default value
-#             elif expected_type == Any:
-#                 pass  # Allowed to be empty default value
-#             else:
-#                 raise TypeError(
-#                     f"do_validation did not pass for {type(self)} key:{key}: type:{expected_type} , invalid_value: {value} ... {key}current_data: {init_dict}"
-#                 )
-#         if isinstance(expected_type, type) and (issubclass(expected_type, BaseData)):
-#             pass  # Already passed deep validation above ^. below is for raw data
-#         elif expected_type != Any and not isinstance(expected_type, FunctionType):
-#             res = True
-#             try:
-#                 # if new_val is not None and not isinstance(new_val, expected_type) and expected_type:
-#                 #    res = False
-#                 if new_val is not None and not self.valid_type(new_val, expected_type):
-#                     res = False
-#             except Exception as e:
-#                 import traceback as tb
-
-#                 print("\n\n\n BaseData Debug")
-#                 print(tb.format_exc())
-#                 print(new_val)
-#                 raise TypeError(
-#                     f"b Expected type {expected_type} for key '{key}' CRASHED, got {type(new_val)} in  {type(self)}  -- {message}"
-#                 )
-#             if res == False:
-#                 print(self)
-#                 print(new_val)
-#                 raise TypeError(
-#                     f"a Expected type {expected_type} for key '{key}', got {type(new_val)} in  {type(self)}   -- {message}"
-#                 )
-
-#         init_dict[key] = new_val
-
-#     def do_env_mapping(self, in_dict):
-#         if isinstance(in_dict, BaseData):
-#             return in_dict
-
-#         def replace_env_match(match):
-#             env_var = match.group(1)
-#             value = os.getenv(env_var)
-#             if value is None:
-#                 raise ValueError(
-#                     f"Missing required environment variable: '{env_var}' for '{self.__class__.__name__}'"
-#                 )
-#                 return match.group(0)
-#             return value
-
-#         def _replace_env_vars(s):
-#             pattern = re.compile(r"<<([A-Z_][A-Z0-9_]*)>>")
-#             # Replace all matches using the externally defined function.
-#             return pattern.sub(replace_env_match, s)
-
-#         if isinstance(in_dict, dict):
-#             new_dict = {}
-#             for key, value in in_dict.items():
-#                 new_dict[key] = self.do_env_mapping(value)
-#             return new_dict
-#         elif isinstance(in_dict, list):
-#             new_list = []
-#             for item in in_dict:
-#                 new_list.append(self.do_env_mapping(item))
-#             return new_list
-#         elif isinstance(in_dict, str):
-#             return _replace_env_vars(in_dict)
-#         else:
-#             # For non-dict, non-list, non-string types, return the value unchanged.
-#             return in_dict
-
-#     def clean(self):
-#         required, optional = self.get_all_keys()
-#         allowed_keys = set(required) | set(optional)
-#         cleaned_dict = {k: self[k] for k in allowed_keys if k in self}
-#         return self.__class__(cleaned_dict)
-
-#     def do_pre_process(self, in_dict):
-#         return in_dict
-
-#     def GetDirtyDict(self):
-#         # Can be used during init to see the unvalidated vars before they are baked. Rarely needed.
-#         return self.dirty_dict
-
-#     def __getattribute__(self, name):
-#         if name == "graph":
-#             print(f"SEARCHING FOR  {name}")
-#             print(f"ANNOTS {type(self)} {type(self).get_annotations()}")
-#         if name in type(self).get_annotations():
-#             try:
-#                 if name == "graph":
-#                     print(f"SEARCHING FOR  2 {name}")
-#                 return self[name]
-#             except KeyError:
-#                 raise AttributeError(f"{name!r} not set")
-#         else:
-#             return super().__getattribute__(name)
-
-#     def __init__(self, in_dict=None, trim=False, **kwargs):
-#         for aname in self.get_annotations():
-#             if aname in self.__dict__:
-#                 self.__dict__[aname] = "REMOVED"
-
-#         # if (self.__class__.__name__ == "ServiceMap" ):
-#         #     try:
-#         #         BaseData.call_cnt
-#         #     except:
-#         #         BaseData.call_cnt = 0
-#         #     BaseData.call_cnt = self.call_cnt + 1
-#         #     print(f"\n\n\n\n\n====================================> IN BASE CLASS {BaseData.call_cnt}--  {self.__class__.__name__}, {in_dict}")
-#         #     #raise Exception("FAILED")
-#         if in_dict == None:
-#             in_dict = {}  # Will contain a null
-#         if kwargs and len(kwargs) > 0:
-#             # print(f"HAS KW ARGS==> ")
-#             for k in kwargs:
-#                 in_dict[k] = kwargs[k]
-#         # else:
-#         #    print(f"NO KW ARGS==> ")
-#         assert isinstance(in_dict, dict), (
-#             f"must use with dict value for in_dict. This is a Dict constructor. Got the following : {in_dict}"
-#         )
-#         if isinstance(in_dict, type(self)):
-#             super().__init__(in_dict)
-#             return
-#         self.dirty_dict = in_dict.copy()
-#         # if (self.__class__.__name__ == "ServiceMap" ):
-#         #     print(f"====================================> Runnning pre-process {BaseData.call_cnt}-- in {self.__class__.__name__}:{in_dict}")
-#         in_dict = self.do_pre_process(
-#             in_dict
-#         )  ### Right, I should pre-process the env, not validate.
-#         if in_dict == None:
-#             raise Exception("Pre process must return a processed dict")
-#         in_dict = self.do_env_mapping(in_dict)
-#         required_keys, optional_keys = self.get_all_keys()
-#         for key, expected_type in required_keys.items():
-#             assert type(expected_type) != str
-#         for key, expected_type in optional_keys.items():
-#             assert type(expected_type) != str
-
-#         if trim == False:
-#             init_dict = in_dict
-#         else:
-#             all_keys = list(required_keys.keys()) + list(optional_keys.keys())
-#             init_dict = in_dict.copy()
-#             for k in init_dict.keys():
-#                 if k not in all_keys:
-#                     del init_dict[k]
-
-#         # Validate and convert required keys
-#         # print(f"{self.__class__.__name__}.REQ_KEYS: {list(required_keys.keys())}" )
-#         for key, expected_type in required_keys.items():
-#             self.validate_and_convert(key, expected_type, init_dict)
-#             if key not in init_dict and key != "*":
-#                 raise ValueError(
-#                     f"Key '{key}' must be in the initialization dictionary"
-#                 )
-
-#         # Validate and convert optional keys if they are present
-#         # print(f"{self.__class__.__name__}.OPT_KEYS: {list(optional_keys.keys())}" )
-#         # print(in_dict)
-#         for key, expected_type in optional_keys.items():
-#             if key in init_dict:
-#                 self.validate_and_convert(
-#                     key, expected_type, init_dict
-#                 )  ###### <-------
-#         wildcard = required_keys.get("*") or optional_keys.get("*")
-#         if wildcard:
-#             for key in list(init_dict.keys()):
-#                 if key not in required_keys and key not in optional_keys:
-#                     self.validate_and_convert(key, wildcard, init_dict)
-
-#         self.dirty_dict = None
-#         for key, value in init_dict.items():
-#             newval, msg = self.do_every_validation(key, value)
-#             if len(msg) > 0:
-#                 raise Exception(msg)
-#             init_dict[key] = newval
-
-#         defaults = self.get_all_defaults()  ######## <----- FAILS
-#         for key in defaults.keys():
-#             if key not in init_dict and defaults[key] != None:
-#                 init_dict[key] = defaults[key]
-#         # print(f"final dict {init_dict}")
-#         super().__init__(init_dict)
-
-#     def __setitem__(self, key, value):
-#         # print(f"Doing validation for key {key}")
-#         # TODO, Generalize the validation check, and run it on set in a complete manner
-#         # validated_value, message = self.do_validation(key, value)
-#         #
-#         required_keys, optional_keys = self.get_all_keys()
-#         all_keys = {**required_keys, **optional_keys}
-#         out_data = {key: value}
-#         # print(f"-~-~-~-~-~-~-~-~> <{key}->{value}> in {all_keys.keys()}")
-#         if key in list(all_keys.keys()):
-#             # print(f"--------------------------------> {key}")
-#             self.validate_and_convert(
-#                 key=key, expected_type=all_keys[key], init_dict=out_data
-#             )
-#         super().__setitem__(key, value)
-
-#     # New __getitem__ wrapper
-#     def __getitem__(self, key):
-#         try:
-#             # Retrieve the value using the parent dict's method.
-#             value = super().__getitem__(key)
-#         except KeyError as e:
-#             self.do_raise(f"Key '{key}' not found in the BaseData instance")
-#         return self.do_get_filtered(key, value)
-
-#     def set(self, key, val):
-#         self.__setitem__(key, val)
-#         return True
-
-#     def to_safe_value(self, key, val):
-#         if hasattr(val, "to_safe_dict_LLMS_DONT_USE") and callable(val.to_safe_dict_LLMS_DONT_USE):
-#             # print(f"\n\nwtf \na:{type(self)} \nb:{type(val)} -.\n\nc:{key}:{val}")
-#             return val.to_safe_dict_LLMS_DONT_USE()
-#         if isinstance(val, dict):
-#             val = BaseData(val)
-#             return val.to_safe_dict_LLMS_DONT_USE(val)
-#         if isinstance(val, list):
-#             return self.to_safe_list(val)
-#         if isinstance(val, tuple):
-#             return tuple(self.to_safe_list(list(val)))
-#         if isinstance(val, type):
-#             return val.__name__
-#         return val
-
-#     def to_safe_dict_LLMS_DONT_USE(self, target_dict=None):
-#         """
-#         Recursively convert this mapping to built-ins, using to_safe_value.
-#         """
-#         if target_dict is None:
-#             target_dict = self
-
-#         safe = {}
-#         for key, val in target_dict.items():
-#             safe[key] = self.to_safe_value(key, val)
-#         return safe
-
-#     def to_safe_list(self, target_list):
-#         """
-#         Recursively convert a list of mixed elements to built-ins.
-#         """
-#         return [self.to_safe_value(None, val) for val in target_list]
-
-
-# #
-# # # # #
-# #
-# def run_simple_test():
-#     class BodyPartData(BaseData):
-#         def get_keys(self):
-#             required = {"id": str, "part_name": str}
-#             optional = {"health": int, "skills": dict}
-#             return required, optional
-
-#     class HumanData(BaseData):
-#         def get_keys(self):
-#             required = {"id": str, "name": str}
-#             optional = {"age": int, "interests": dict, "arm": BodyPartData}
-#             return required, optional
-
-#         def do_validation(self, key, value):
-#             if key == "age":
-#                 assert value > 0 and value < 120, "Humans must have a valid age range"
-#             return value, ""
-
-#     class CarData(BaseData):
-#         def get_keys():
-#             required = {"id": str, "name": str}
-#             optional = {"driver": HumanData}
-#             return required, optional
-
-#     import pprint
-
-#     # Example usage
-#     humanData = HumanData(
-#         {
-#             "id": "123",
-#             "name": "Jeff",
-#             "age": 30,
-#             "arm": {"id": "bigArm", "part_name": "part_1"},
-#         }
-#     )
-
-#     arm = BodyPartData({"id": "bigArm", "part_name": "part_1"})
-#     humanData2 = HumanData({"id": "123", "name": "Jeff", "age": 30, "arm": arm})
-
-
-# # from decelium_wallet import core as core
 
 
 # class ConnectionConfig(BaseData):
@@ -1473,9 +919,6 @@ class FloatRange(BaseData):
 #         return required, {}
 
 
-# """ 
-# EXAMPLES 
-# ------
 
 # class AgentCommand(BaseData):
 #     def __init__(self,in_dict,trim=False):

@@ -13,7 +13,12 @@ It is intended for service authors building new services from base classes, not 
 ---
 
 ## 0) What This Guide Covers
+/Users/computercomputer/justinops/nodejobs/docs/http_service_guide.md
+/Users/computercomputer/justinops/nodejobs/docs/cli_service_guide.md
+/Users/computercomputer/justinops/nodejobs/docs/mcp_service_guide.md
+/Users/computercomputer/justinops/nodejobs/docs/unified_service_guide.md
 
+/Users/computercomputer/justinops/nodejobs/docs/node_service_guide.md
 This guide covers:
 
 1. The framework layering for HTTP services.

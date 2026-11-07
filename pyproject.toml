@@ -28,6 +28,7 @@ dependencies = [
 
 [project.scripts]
 nodejobs-client-test = "clients.python.test_runner:main"
+nodejobs-basedata-test = "tests.base_data.runner.test_runner:main"
 
 [tool.setuptools]
 packages = { find = { exclude = ["tests*", "docs*"] } }

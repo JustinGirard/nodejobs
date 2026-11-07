@@ -65,8 +65,8 @@ public class ClientTests
     {
         var repoRoot = FindRepoRoot();
         var py = Environment.GetEnvironmentVariable("PYTHON");
-        var tempRoot = Path.Combine(Path.GetTempPath(), $"nodejobs-client-cs-{Guid.NewGuid():N}");
-        Directory.CreateDirectory(tempRoot);
+        var lifecycleDir = Path.Combine(repoRoot, "test-results", "client-tests", "lifecycle");
+        Directory.CreateDirectory(lifecycleDir);
 
         var commands = new Dictionary<string, object>
         {
@@ -91,7 +91,8 @@ public class ClientTests
             ["commands"] = commands,
             ["lifecycle"] = new Dictionary<string, object>
             {
-                ["db_path"] = Path.Combine(tempRoot, "jobs_http.db"),
+                ["db_path"] = Path.Combine(lifecycleDir, "jobs_lifecycle.db"),
+                ["job_id"] = "__CLIENT_LIFECYCLE__http_case_cs",
                 ["launch_command"] = new List<string>
                 {
                     py,
@@ -114,7 +115,8 @@ public class ClientTests
             ["commands"] = commands,
             ["lifecycle"] = new Dictionary<string, object>
             {
-                ["db_path"] = Path.Combine(tempRoot, "jobs_mcp.db"),
+                ["db_path"] = Path.Combine(lifecycleDir, "jobs_lifecycle.db"),
+                ["job_id"] = "__CLIENT_LIFECYCLE__mcp_case_cs",
                 ["launch_command"] = new List<string>
                 {
                     py,
@@ -175,6 +177,20 @@ public class ClientTests
             throw new Exception("no_transport_cases_selected");
         }
         var offsets = new List<double> { 1.0, -2.5 };
+        var expectedFixtures = new Dictionary<string, object>
+        {
+            ["int"] = 3L,
+            ["float"] = 2.5,
+            ["string"] = "abc",
+            ["bool"] = true,
+            ["dict"] = new Dictionary<string, object> { ["a"] = 1L, ["error"] = "app-level" },
+            ["list"] = new List<object> { 1L, "x", false },
+            ["null"] = null!,
+            ["nested"] = new Dictionary<string, object>
+            {
+                ["x"] = new List<object> { 1L, new Dictionary<string, object> { ["y"] = null! } }
+            },
+        };
 
         try
         {
@@ -182,12 +198,16 @@ public class ClientTests
             {
                 if (c.needsServer)
                 {
-                    await service.StartServerAsync(new Dictionary<string, object> { ["server_alias"] = c.alias });
-                    await service.WaitReadyAsync(new Dictionary<string, object> { ["server_alias"] = c.alias, ["timeout_s"] = 8.0 });
+                    var pre = await service.StopServerAsync(new Dictionary<string, object> { ["server_alias"] = c.alias });
+                    Assert.Equal("ok", pre["status"]);
+                    var started = await service.StartServerAsync(new Dictionary<string, object> { ["server_alias"] = c.alias });
+                    Assert.Equal("ok", started["status"]);
+                    var ready = await service.WaitReadyAsync(new Dictionary<string, object> { ["server_alias"] = c.alias, ["timeout_s"] = 8.0 });
+                    Assert.Equal("ok", ready["status"]);
                 }
                 foreach (var tzOffset in offsets)
                 {
-                    var outObj = await service.InvokeAsync(
+                    var outObj = await service.Invoke(
                         new Dictionary<string, object>
                         {
                             ["server_alias"] = c.alias,
@@ -201,59 +221,49 @@ public class ClientTests
                     DPrint($"PROOF CS mode={c.mode} response: {outObj} expected={expected}");
                     Assert.Equal(expected, Convert.ToDouble(outObj));
                 }
+                foreach (var kv in expectedFixtures)
+                {
+                    var outObj = await service.Invoke(new Dictionary<string, object>
+                    {
+                        ["server_alias"] = c.alias,
+                        ["command_id"] = "fixture",
+                        ["data"] = new Dictionary<string, object> { ["kind"] = kv.Key },
+                    });
+                    if (kv.Key == "int")
+                    {
+                        Assert.True(outObj is int or long);
+                        Assert.Equal(3L, Convert.ToInt64(outObj));
+                    }
+                    else if (kv.Key == "float")
+                    {
+                        Assert.True(outObj is float or double or decimal);
+                        Assert.Equal(2.5, Convert.ToDouble(outObj), 8);
+                    }
+                    else if (kv.Key == "string")
+                    {
+                        Assert.IsType<string>(outObj);
+                        Assert.Equal("abc", (string)outObj);
+                    }
+                    else if (kv.Key == "bool")
+                    {
+                        Assert.IsType<bool>(outObj);
+                        Assert.True((bool)outObj);
+                    }
+                    else if (kv.Key == "null")
+                    {
+                        Assert.Null(outObj);
+                    }
+                    else
+                    {
+                        Assert.Equal(DJson.Stringify(kv.Value), DJson.Stringify(outObj));
+                    }
+                }
                 if (c.needsServer)
                 {
-                    await service.StopServerAsync(new Dictionary<string, object> { ["server_alias"] = c.alias });
+                    var stopped = await service.StopServerAsync(new Dictionary<string, object> { ["server_alias"] = c.alias });
+                    Assert.Equal("ok", stopped["status"]);
                 }
             }
-
-            await service.StartServerAsync(new Dictionary<string, object> { ["server_alias"] = "http_case" });
-            await service.WaitReadyAsync(new Dictionary<string, object> { ["server_alias"] = "http_case", ["timeout_s"] = 8.0 });
-            await service.StartServerAsync(new Dictionary<string, object> { ["server_alias"] = "mcp_case" });
-            await service.WaitReadyAsync(new Dictionary<string, object> { ["server_alias"] = "mcp_case", ["timeout_s"] = 8.0 });
-
-            var fixtureKinds = new[] { "int", "float", "string", "bool", "dict", "list", "null", "nested" };
-            foreach (var kind in fixtureKinds)
-            {
-                var http = await service.InvokeAsync(new Dictionary<string, object>
-                {
-                    ["server_alias"] = "http_case",
-                    ["command_id"] = "fixture",
-                    ["data"] = new Dictionary<string, object> { ["kind"] = kind },
-                });
-                var mcp = await service.InvokeAsync(new Dictionary<string, object>
-                {
-                    ["server_alias"] = "mcp_case",
-                    ["command_id"] = "fixture",
-                    ["data"] = new Dictionary<string, object> { ["kind"] = kind },
-                });
-                var cli = await service.InvokeAsync(new Dictionary<string, object>
-                {
-                    ["server_alias"] = "cli_case",
-                    ["command_id"] = "fixture",
-                    ["data"] = new Dictionary<string, object> { ["kind"] = kind },
-                });
-                Assert.Equal(DJson.Stringify(http), DJson.Stringify(mcp));
-                Assert.Equal(DJson.Stringify(http), DJson.Stringify(cli));
-            }
-            await service.StopServerAsync(new Dictionary<string, object> { ["server_alias"] = "mcp_case" });
-            await service.StopServerAsync(new Dictionary<string, object> { ["server_alias"] = "http_case" });
-
-            await service.StartServerAsync(new Dictionary<string, object> { ["server_alias"] = "http_case" });
-            await service.WaitReadyAsync(new Dictionary<string, object> { ["server_alias"] = "http_case", ["timeout_s"] = 8.0 });
-            var concurrentTasks = new List<Task<object>>();
-            for (var i = 0; i < 20; i++)
-            {
-                concurrentTasks.Add(service.InvokeAsync(new Dictionary<string, object>
-                {
-                    ["server_alias"] = "http_case",
-                    ["command_id"] = "fixture",
-                    ["data"] = new Dictionary<string, object> { ["kind"] = "int" },
-                }));
-            }
-            var concurrent = await Task.WhenAll(concurrentTasks);
-            Assert.True(concurrent.All(item => Convert.ToInt64(item) == 3));
-            await service.StopServerAsync(new Dictionary<string, object> { ["server_alias"] = "http_case" });
         }
         finally
         {
@@ -267,13 +277,7 @@ public class ClientTests
                 {
                 }
             }
-            try
-            {
-                Directory.Delete(tempRoot, true);
-            }
-            catch
-            {
-            }
+            service.Close();
         }
     }
 

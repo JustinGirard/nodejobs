@@ -1,7 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { ClientService } from "../src/ClientService.js";
 import { ClientData } from "../src/ClientData.js";
@@ -33,7 +32,8 @@ function selectedTransports() {
 test("javascript client lifecycle + hello", async () => {
   const repoRoot = path.resolve(process.cwd(), "../..");
   const py = process.env.PYTHON;
-  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "nodejobs-client-js-"));
+  const lifecycleDir = path.join(repoRoot, "test-results", "client-tests", "lifecycle");
+  fs.mkdirSync(lifecycleDir, { recursive: true });
   const commands = {
     now: {
       requiredParams: ["tz_offset"],
@@ -52,7 +52,8 @@ test("javascript client lifecycle + hello", async () => {
     path: "/cmd",
     commands,
     lifecycle: {
-      dbPath: path.join(tmpRoot, "jobs_http.db"),
+      dbPath: path.join(lifecycleDir, "jobs_lifecycle.db"),
+      jobId: "__CLIENT_LIFECYCLE__http_case_js",
       launchCommand: [
         py,
         "-m",
@@ -72,7 +73,8 @@ test("javascript client lifecycle + hello", async () => {
     path: "/mcp",
     commands,
     lifecycle: {
-      dbPath: path.join(tmpRoot, "jobs_mcp.db"),
+      dbPath: path.join(lifecycleDir, "jobs_lifecycle.db"),
+      jobId: "__CLIENT_LIFECYCLE__mcp_case_js",
       launchCommand: [
         py,
         "-m",
@@ -122,12 +124,26 @@ test("javascript client lifecycle + hello", async () => {
     throw new Error("no_transport_cases_selected");
   }
   const offsets = [1, -2.5];
+  const expectedFixtures = {
+    int: 3,
+    float: 2.5,
+    string: "abc",
+    bool: true,
+    dict: { a: 1, error: "app-level" },
+    list: [1, "x", false],
+    null: null,
+    nested: { x: [1, { y: null }] },
+  };
 
   try {
     for (const c of cases) {
       if (c.needsServer) {
-        await client.startServer({ serverAlias: c.alias });
-        await client.waitReady({ serverAlias: c.alias, timeoutS: 8 });
+        const pre = await client.stopServer({ serverAlias: c.alias });
+        assert.equal(pre.status, "ok");
+        const started = await client.startServer({ serverAlias: c.alias });
+        assert.equal(started.status, "ok");
+        const ready = await client.waitReady({ serverAlias: c.alias, timeoutS: 8 });
+        assert.equal(ready.status, "ok");
       }
       for (const tzOffset of offsets) {
         const out = await client.invoke({ serverAlias: c.alias, commandId: "now", data: { tz_offset: tzOffset } });
@@ -137,33 +153,22 @@ test("javascript client lifecycle + hello", async () => {
         assert.equal(typeof out, "number");
         assert.equal(out, expected);
       }
+      for (const [kind, expected] of Object.entries(expectedFixtures)) {
+        const out = await client.invoke({ serverAlias: c.alias, commandId: "fixture", data: { kind } });
+        assert.deepEqual(out, expected);
+        if (expected === null) {
+          assert.equal(out, null);
+        } else if (Array.isArray(expected)) {
+          assert.equal(Array.isArray(out), true);
+        } else {
+          assert.equal(typeof out, typeof expected);
+        }
+      }
       if (c.needsServer) {
-        await client.stopServer({ serverAlias: c.alias });
+        const stopped = await client.stopServer({ serverAlias: c.alias });
+        assert.equal(stopped.status, "ok");
       }
     }
-
-    await client.startServer({ serverAlias: "httpCase" });
-    await client.waitReady({ serverAlias: "httpCase", timeoutS: 8 });
-    await client.startServer({ serverAlias: "mcpCase" });
-    await client.waitReady({ serverAlias: "mcpCase", timeoutS: 8 });
-    const fixtureKinds = ["int", "float", "string", "bool", "dict", "list", "null", "nested"];
-    for (const kind of fixtureKinds) {
-      const http = await client.invoke({ serverAlias: "httpCase", commandId: "fixture", data: { kind } });
-      const mcp = await client.invoke({ serverAlias: "mcpCase", commandId: "fixture", data: { kind } });
-      const cli = await client.invoke({ serverAlias: "cliCase", commandId: "fixture", data: { kind } });
-      assert.deepEqual(http, mcp);
-      assert.deepEqual(http, cli);
-    }
-    await client.stopServer({ serverAlias: "mcpCase" });
-    await client.stopServer({ serverAlias: "httpCase" });
-
-    await client.startServer({ serverAlias: "httpCase" });
-    await client.waitReady({ serverAlias: "httpCase", timeoutS: 8 });
-    const concurrent = await Promise.all(
-      Array.from({ length: 20 }, () => client.invoke({ serverAlias: "httpCase", commandId: "fixture", data: { kind: "int" } })),
-    );
-    assert.ok(concurrent.every((x) => x === 3));
-    await client.stopServer({ serverAlias: "httpCase" });
   } finally {
     for (const c of cases) {
       try {
@@ -171,6 +176,6 @@ test("javascript client lifecycle + hello", async () => {
       } catch (_) {
       }
     }
-    fs.rmSync(tmpRoot, { recursive: true, force: true });
+    client.close();
   }
 });

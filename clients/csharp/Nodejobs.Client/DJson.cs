@@ -11,9 +11,6 @@ using DictStrObj = System.Collections.Generic.Dictionary<string, object>;
 
 namespace Nodejobs.Client;
 
-// Replica source:
-// /Users/computercomputer/justinops/git_backup/ui/ProcessingGraphManager/Packages/com.justingirard.graphnodetools/Runtime/Scripts/ShellRun.cs
-// class DJson (lines ~104-808)
 public class DJson
 {
     public static List<string> UnpackStrings(object item)
@@ -530,5 +527,157 @@ public class DJson
     {
         Append,
         Replace
+    }
+
+    // ADDITIVE BaseData conversion helpers. No pre-existing DJson method is changed.
+    // Converts JSON-parsed List<object> and nested dictionaries to declared types.
+    public static object ConvertBaseDataValue(Type expected, object value)
+    {
+        if (expected == null)
+            throw new ArgumentNullException(nameof(expected));
+        if (expected == typeof(object))
+            return value;
+
+        var nullable = Nullable.GetUnderlyingType(expected);
+        if (value == null)
+        {
+            if (nullable != null)
+                return null;
+            throw new InvalidCastException("invalid_type");
+        }
+        if (nullable != null)
+            expected = nullable;
+
+        if (typeof(BaseData).IsAssignableFrom(expected))
+        {
+            if (expected.IsInstanceOfType(value))
+                return value;
+            if (value is not IDictionary<string, object> source)
+                throw new InvalidCastException("invalid_type");
+            try
+            {
+                // Derived contract classes expose a public dictionary constructor.
+                var instance = Activator.CreateInstance(expected,
+                    new object[] { new Dictionary<string, object>(source) });
+                if (instance is not BaseData)
+                    throw new InvalidCastException("invalid_type");
+                return instance;
+            }
+            catch (System.Reflection.TargetInvocationException ex)
+            {
+                // Preserve nested contract error identifiers, not reflection errors.
+                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(
+                    ex.InnerException ?? ex).Throw();
+                throw;
+            }
+        }
+
+        if (expected.IsArray && expected.GetArrayRank() == 1)
+        {
+            var values = ConvertBaseDataList(expected.GetElementType()!, value);
+            var array = Array.CreateInstance(expected.GetElementType()!, values.Count);
+            values.CopyTo(array, 0);
+            return array;
+        }
+
+        if (expected.IsGenericType && expected.GetGenericTypeDefinition() == typeof(List<>))
+            return ConvertBaseDataList(expected.GetGenericArguments()[0], value);
+
+        if (expected.IsGenericType && expected.GetGenericTypeDefinition() == typeof(Dictionary<,>))
+        {
+            var arguments = expected.GetGenericArguments();
+            if (arguments[0] != typeof(string))
+                throw new InvalidCastException("invalid_type");
+            var target = (IDictionary)Activator.CreateInstance(expected)!;
+            if (value is IDictionary<string, object> source)
+            {
+                foreach (var kv in source)
+                    target.Add(kv.Key, ConvertBaseDataValue(arguments[1], kv.Value));
+                return target;
+            }
+            if (value is IDictionary other)
+            {
+                foreach (DictionaryEntry kv in other)
+                {
+                    if (kv.Key is not string key)
+                        throw new InvalidCastException("invalid_type");
+                    target.Add(key, ConvertBaseDataValue(arguments[1], kv.Value));
+                }
+                return target;
+            }
+            throw new InvalidCastException("invalid_type");
+        }
+
+        // Safe, narrow JSON numeric conversions. Never parse numbers from strings.
+        if (expected == typeof(int) && value is long longValue)
+        {
+            if (longValue < int.MinValue || longValue > int.MaxValue)
+                throw new InvalidCastException("invalid_type");
+            return checked((int)longValue);
+        }
+        if (expected == typeof(long) && value is int intValue)
+            return (long)intValue;
+        if (expected == typeof(double))
+        {
+            if (value is int i) return (double)i;
+            if (value is long l) return (double)l;
+            if (value is float f) return (double)f;
+        }
+        if (expected.IsInstanceOfType(value))
+            return value;
+        throw new InvalidCastException("invalid_type");
+    }
+
+    // General-purpose typed-list conversion; also used for nested List<ChildData>.
+    public static IList ConvertBaseDataList(Type elementType, object value)
+    {
+        if (elementType == null)
+            throw new ArgumentNullException(nameof(elementType));
+        if (value is string || value is IDictionary || value is IDictionary<string, object>
+            || value is not IEnumerable enumerable)
+            throw new InvalidCastException("invalid_type");
+        var result = (IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(elementType))!;
+        foreach (var item in enumerable)
+            result.Add(ConvertBaseDataValue(elementType, item));
+        return result;
+    }
+
+    // Post-hook validation is STRICT: a hook must not leave a new, unconverted type.
+    public static bool MatchesBaseDataType(Type expected, object value)
+    {
+        if (expected == typeof(object)) return true;
+        var nullable = Nullable.GetUnderlyingType(expected);
+        if (value == null) return nullable != null;
+        if (nullable != null) expected = nullable;
+
+        if (expected.IsArray && expected.GetArrayRank() == 1)
+        {
+            if (!expected.IsInstanceOfType(value)) return false;
+            var elementType = expected.GetElementType()!;
+            foreach (var element in (IEnumerable)value)
+                if (!MatchesBaseDataType(elementType, element)) return false;
+            return true;
+        }
+        if (expected.IsGenericType && expected.GetGenericTypeDefinition() == typeof(List<>))
+        {
+            if (!expected.IsInstanceOfType(value)) return false;
+            var elementType = expected.GetGenericArguments()[0];
+            foreach (var element in (IEnumerable)value)
+                if (!MatchesBaseDataType(elementType, element)) return false;
+            return true;
+        }
+        if (expected.IsGenericType && expected.GetGenericTypeDefinition() == typeof(Dictionary<,>))
+        {
+            if (!expected.IsInstanceOfType(value)) return false;
+            var types = expected.GetGenericArguments();
+            if (types[0] != typeof(string)) return false;
+            foreach (DictionaryEntry pair in (IDictionary)value)
+            {
+                if (pair.Key is not string || !MatchesBaseDataType(types[1], pair.Value))
+                    return false;
+            }
+            return true;
+        }
+        return expected.IsInstanceOfType(value);
     }
 }

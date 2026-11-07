@@ -1,0 +1,46 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Test artifacts/results
+tests/client/artifacts/
+test-results/
+
+# Build/package artifacts
+build/
+dist/
+*.egg-info/
+nodejobs.egg-info/
+
+# JS build deps (clients subtree work)
+node_modules/
+
+# Local runtime/session state
+.client_runtime/
+agent_tasks/
+
+# Generated docs scratch space
+docs/temp/
+
+# Runtime/test log directories generated under events fixtures
+nodejobs/events/**/logs/
+
+# C# build outputs in test harnesses
+tests/base_data/csharp/**/bin/
+tests/base_data/csharp/**/obj/
+tests/proxies/hosts/csharp/**/obj/
+
+# Generated dependency test output trees (runtime artifacts, not source fixtures)
+nodejobs/dependencies/base_session_path_replace_tests/
+nodejobs/dependencies/fieldset_tests/
+nodejobs/dependencies/graph_executor_tests/
+
+# Temporary C# backup artifacts
+*.csold

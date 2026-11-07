@@ -1,7 +1,5 @@
-import asyncio
 import os
 import sys
-import tempfile
 from pathlib import Path
 
 from clients.python import (
@@ -37,8 +35,8 @@ def _selected_transports() -> set[str]:
 def test_client_http_server_lifecycle_and_hello():
     repo_root = Path(__file__).resolve().parents[2]
     py = sys.executable
-    temp_root = tempfile.TemporaryDirectory(prefix="nodejobs-client-py-")
-    tmp = Path(temp_root.name)
+    lifecycle_dir = repo_root / "test-results" / "client-tests" / "lifecycle"
+    lifecycle_dir.mkdir(parents=True, exist_ok=True)
 
     commands = {
         "now": {
@@ -59,7 +57,8 @@ def test_client_http_server_lifecycle_and_hello():
         "path": "/cmd",
         "commands": commands,
         "lifecycle": {
-            "db_path": str(tmp / "jobs_http.db"),
+            "db_path": str(lifecycle_dir / "jobs_http.db"),
+            "job_id": "__CLIENT_LIFECYCLE__http_case",
             "launch_command": [
                 py,
                 "-m",
@@ -79,7 +78,8 @@ def test_client_http_server_lifecycle_and_hello():
         "path": "/mcp",
         "commands": commands,
         "lifecycle": {
-            "db_path": str(tmp / "jobs_mcp.db"),
+            "db_path": str(lifecycle_dir / "jobs_mcp.db"),
+            "job_id": "__CLIENT_LIFECYCLE__mcp_case",
             "launch_command": [
                 py,
                 "-m",
@@ -145,8 +145,12 @@ def test_client_http_server_lifecycle_and_hello():
     try:
         for alias, mode, needs_server in cases:
             if needs_server:
-                asyncio.run(client.start_server_async({ServerAliasSpec.server_alias: alias}))
-                asyncio.run(client.wait_ready_async({WaitReadySpec.server_alias: alias, WaitReadySpec.timeout_s: 8.0}))
+                pre = client.stop_server({ServerAliasSpec.server_alias: alias})
+                assert pre["status"] == "ok"
+                started = client.start_server({ServerAliasSpec.server_alias: alias})
+                assert started["status"] == "ok"
+                ready = client.wait_ready({WaitReadySpec.server_alias: alias, WaitReadySpec.timeout_s: 8.0})
+                assert ready["status"] == "ok"
             for tz_offset in offsets:
                 out = client.invoke(
                     {
@@ -171,15 +175,15 @@ def test_client_http_server_lifecycle_and_hello():
                 assert out == expected
                 assert type(out) is type(expected)
             if needs_server:
-                asyncio.run(client.stop_server_async({ServerAliasSpec.server_alias: alias}))
+                stopped = client.stop_server({ServerAliasSpec.server_alias: alias})
+                assert stopped["status"] == "ok"
     finally:
         for alias, _, _ in cases:
             try:
-                asyncio.run(client.stop_server_async({ServerAliasSpec.server_alias: alias}))
+                client.stop_server({ServerAliasSpec.server_alias: alias})
             except Exception:
                 pass
         try:
             client.close()
         except Exception:
             pass
-        temp_root.cleanup()

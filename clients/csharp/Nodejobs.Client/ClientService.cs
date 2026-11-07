@@ -125,7 +125,7 @@ public class ClientService
         return new Dictionary<string, string> { { "status", "ok" } };
     }
 
-    public async Task<object> InvokeAsync(Dictionary<string, object> payload)
+    private async Task<object> InvokeAsync(Dictionary<string, object> payload)
     {
         var validated = Data.ValidateInvoke(payload);
         var invoke = validated.invoke;
@@ -194,10 +194,10 @@ public class ClientService
                 var value = kv.Value is string s ? s : DJson.Stringify(kv.Value);
                 cliArgs.Add($"{kv.Key}={value}");
             }
-            var command = new List<string>();
-            command.AddRange(prefix);
-            command.AddRange(cliArgs);
-            var cli = await RunProcessAsync(command[0], command.Skip(1).ToList(), server.LaunchCwd);
+            var cliCommand = new List<string>();
+            cliCommand.AddRange(prefix);
+            cliCommand.AddRange(cliArgs);
+            var cli = await RunProcessAsync(cliCommand[0], cliCommand.Skip(1).ToList(), server.LaunchCwd);
             if (cli.ExitCode != 0) throw new Exception($"cli_invoke_failed:{cli.ExitCode}\nstdout:\n{cli.StdOut}\nstderr:\n{cli.StdErr}");
             var lines = cli.StdOut.Split('\n').Select(x => x.Trim()).Where(x => x.Length > 0).ToList();
             if (lines.Count == 0) throw new Exception("cli_empty_stdout");
@@ -211,12 +211,30 @@ public class ClientService
     {
         var aliasPayload = new ServerAliasSpec(payload);
         var alias = aliasPayload.ServerAlias;
-        if (!_runtimeByAlias.ContainsKey(alias))
+        var spec = Data.GetServer(new Dictionary<string, object> { [ServerAliasSpec.f_server_alias] = alias });
+        RuntimeState? runtime = null;
+        if (_runtimeByAlias.ContainsKey(alias))
+        {
+            runtime = _runtimeByAlias[alias];
+        }
+        else if (spec.Lifecycle != null)
+        {
+            var fallbackLifecycle = new LifecycleSpec(spec.Lifecycle);
+            if (!string.IsNullOrWhiteSpace(fallbackLifecycle.DbPath) && !string.IsNullOrWhiteSpace(fallbackLifecycle.JobId))
+            {
+                runtime = new RuntimeState
+                {
+                    DbPath = fallbackLifecycle.DbPath,
+                    JobId = fallbackLifecycle.JobId,
+                    Host = spec.Host,
+                    Port = spec.Port,
+                };
+            }
+        }
+        if (runtime == null)
         {
             return new Dictionary<string, string> { { "status", "ok" } };
         }
-        var runtime = _runtimeByAlias[alias];
-        var spec = Data.GetServer(new Dictionary<string, object> { [ServerAliasSpec.f_server_alias] = alias });
         if (spec.Lifecycle == null)
         {
             _runtimeByAlias.Remove(alias);
@@ -246,8 +264,57 @@ public class ClientService
 
     public Dictionary<string, string> StartServer(Dictionary<string, object> payload) => StartServerAsync(payload).GetAwaiter().GetResult();
     public Dictionary<string, string> WaitReady(Dictionary<string, object> payload) => WaitReadyAsync(payload).GetAwaiter().GetResult();
-    public object Invoke(Dictionary<string, object> payload) => InvokeAsync(payload).GetAwaiter().GetResult();
+    public Task<object> Invoke(
+        Dictionary<string, object> payload,
+        Action<object>? onSuccess = null,
+        Action<Exception>? onFailure = null,
+        Action<object>? onDisconnect = null,
+        Action<object>? onProgress = null
+    )
+    {
+        var task = InvokeAsync(payload);
+        task.ContinueWith(t =>
+        {
+            if (t.IsFaulted)
+            {
+                var ex = t.Exception?.InnerException ?? t.Exception ?? new Exception("invoke_failed");
+                if (onFailure != null)
+                {
+                    try { onFailure(ex); } catch (Exception cbEx) { Console.Error.WriteLine(cbEx); }
+                }
+                else
+                {
+                    Console.Error.WriteLine(ex);
+                }
+                return;
+            }
+            if (t.IsCanceled)
+            {
+                var ex = new TaskCanceledException("invoke_cancelled");
+                if (onFailure != null)
+                {
+                    try { onFailure(ex); } catch (Exception cbEx) { Console.Error.WriteLine(cbEx); }
+                }
+                else
+                {
+                    Console.Error.WriteLine(ex);
+                }
+                return;
+            }
+            if (onSuccess != null)
+            {
+                try { onSuccess(t.Result); } catch (Exception cbEx) { Console.Error.WriteLine(cbEx); }
+            }
+        }, TaskScheduler.Default);
+        return task;
+    }
     public Dictionary<string, string> StopServer(Dictionary<string, object> payload) => StopServerAsync(payload).GetAwaiter().GetResult();
+
+    public void Close()
+    {
+        _runtimeByAlias.Clear();
+        _http.Dispose();
+    }
 
     private static object ParseJsonLike(string raw)
     {

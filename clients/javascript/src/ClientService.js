@@ -104,7 +104,7 @@ export class ClientService {
     return { status: "ok" };
   }
 
-  async invoke(payload) {
+  async _invokeAsync(payload) {
     const invokePayload = new InvokeSpec(payload);
     const { invoke, validatedData, server, command } = this.data.validateInvoke(invokePayload);
     const transport = String(server.transport).trim().toLowerCase();
@@ -174,14 +174,44 @@ export class ClientService {
     throw new Error(`unsupported_transport:${transport}`);
   }
 
+  invoke(payload, onSuccess = null, onFailure = null, onDisconnect = null, onProgress = null) {
+    const promise = this._invokeAsync(payload);
+    promise.then(
+      (result) => {
+        if (onSuccess) {
+          try { onSuccess(result); } catch (err) { console.error(err); }
+        }
+      },
+      (error) => {
+        if (onFailure) {
+          try { onFailure(error); } catch (cbErr) { console.error(cbErr); }
+          return;
+        }
+        console.error(error);
+      },
+    );
+    return promise;
+  }
+
   async stopServer(payload) {
     const specPayload = new ServerAliasSpec(payload);
     const serverAlias = specPayload.serverAlias;
-    if (!this.runtimeByAlias.has(serverAlias)) {
+    const spec = this.data.getServer({ serverAlias });
+    let runtime = this.runtimeByAlias.get(serverAlias);
+    if (!runtime && spec.lifecycle) {
+      const lifecycle = new LifecycleSpec(spec.lifecycle);
+      if (lifecycle.dbPath && lifecycle.jobId) {
+        runtime = {
+          dbPath: String(lifecycle.dbPath),
+          jobId: String(lifecycle.jobId),
+          host: String(spec.host),
+          port: Number(spec.port),
+        };
+      }
+    }
+    if (!runtime) {
       return { status: "ok" };
     }
-    const spec = this.data.getServer({ serverAlias });
-    const runtime = this.runtimeByAlias.get(serverAlias);
     if (!spec.lifecycle) {
       this.runtimeByAlias.delete(serverAlias);
       return { status: "ok" };
@@ -208,5 +238,9 @@ export class ClientService {
       throw new Error(out.stderr || out.stdout);
     }
     return { status: "ok" };
+  }
+
+  close() {
+    this.runtimeByAlias.clear();
   }
 }
