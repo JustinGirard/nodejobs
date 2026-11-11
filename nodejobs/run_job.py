@@ -42,6 +42,10 @@ class RunJob:
         for proc in psutil.process_iter(['pid', 'cmdline']):
             job_chek = proc.info.get('cmdline')
             if job_chek:
+                if (proc.pid == os.getppid()
+                        and job_chek[1:4] == ['-m', 'nodejobs.jobs_service', 'run']
+                        and f'job_id={self.job_id}' in job_chek):
+                    continue
                 string = ' '.join(job_chek)
                 try:
                     if self.job_id in string and 'run_job.py' not in string and 'nodejob_runner' not in string:

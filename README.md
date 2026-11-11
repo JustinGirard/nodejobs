@@ -23,10 +23,27 @@ python -m pip install nodejobs
 
 ```
 
-### Use
+### Command-line use
+
+The job CLI is `python3 -m nodejobs.jobs_service` (not a `nodejobs`
+console-script command). It supports `run`, `status`, `logs`, `list`, and
+`stop`. Use the same `db_path` and `job_id` for subsequent operations:
+
+```bash
+python3 -m nodejobs.jobs_service run job_id=example db_path=/tmp/opencode/nodejobs-example command.1=/usr/bin/printf command.2=hello
+python3 -m nodejobs.jobs_service status job_id=example db_path=/tmp/opencode/nodejobs-example
+python3 -m nodejobs.jobs_service logs job_id=example db_path=/tmp/opencode/nodejobs-example
+```
+
+`run` accepts list-style `command.1=...` arguments and returns after
+starting the job; `status` and `logs` inspect its recorded execution.
+For CLI argument grammar, see `docs/cli_service_guide.md`.
+
+### Python API use
 ```python
 import sys
-from nodejobs import Jobs, JobRecord
+from nodejobs.jobs import Jobs
+from nodejobs.jobdb import JobRecord
 
 # Create a Jobs manager with a specified database path
 jobs_manager = Jobs(db_path="/path/to/job_db/dir")

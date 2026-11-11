@@ -82,6 +82,14 @@ Business logic belongs in command handlers, not in parser/routes/tool wrappers.
 - One command token (first positional command)
 - `key=value` arguments
 
+For the existing NodeJobs job operations, invoke
+`python3 -m nodejobs.jobs_service <run|create|status|list|logs|stop>`.
+`run` and `create` require a list-style command, for example
+`command.1=python3 command.2=-u command.3=script.py`; pass the same
+`db_path` and `job_id` to later `status` or `logs` calls. See the
+copyable CLI example in `nodejobs/README.md` before constructing a
+Python wrapper or inspecting `jobs.py`.
+
 ### Supported parsing behavior
 
 - Quotes are stripped from key/value wrappers.
