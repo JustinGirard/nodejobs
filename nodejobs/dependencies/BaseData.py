@@ -9,6 +9,7 @@ import re
 import io
 import time
 import threading
+import sys
 
 def auto_c(parameter_type):
     def decorator(func):
@@ -31,7 +32,13 @@ class BaseDataMeta(type):
     def __new__(mcs, name, bases, namespace):
         for field in namespace.get('__annotations__', {}):
             namespace.setdefault(field, field)
-        return super().__new__(mcs, name, bases, namespace)
+        cls = super().__new__(mcs, name, bases, namespace)
+        if sys.version_info >= (3, 14):
+            from annotationlib import Format, get_annotations
+            for field in get_annotations(cls, format=Format.STRING):
+                if field not in namespace:
+                    setattr(cls, field, field)
+        return cls
 from functools import lru_cache
 
 class BaseField:
