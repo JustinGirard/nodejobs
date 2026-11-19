@@ -39,6 +39,100 @@ python3 -m nodejobs.jobs_service logs job_id=example db_path=/tmp/opencode/nodej
 starting the job; `status` and `logs` inspect its recorded execution.
 For CLI argument grammar, see `docs/cli_service_guide.md`.
 
+### Building command servers
+
+`nodejobs.dependencies.TestService` is the legacy inheritance-based test
+fixture, not the template for new servers. Direct use of ThinHost's
+`SimpleWebServer` is likewise a legacy server pattern; it remains underneath
+`CommandRegistryHost`. Use `TestServiceComposable.py` for the registration
+pattern below.
+
+For new Python command servers, use
+[`CommandRegistryHost`](nodejobs/dependencies/command_registry_host.py)
+as the authoritative server template. Existing `BaseService` subclasses
+can contribute their command maps to one host:
+
+```python
+from nodejobs.dependencies.BaseService import BaseService
+from nodejobs.dependencies.command_registry_host import CommandRegistryHost
+
+
+class TimeService(BaseService):
+    @classmethod
+    def get_command_map(cls):
+        return {
+            "now": {"required_args": ["tz_offset"], "method": cls.now},
+        }
+
+    @classmethod
+    def now(cls, tz_offset: float) -> float:
+        return float(tz_offset) + 10
+
+
+class GreetingService(BaseService):
+    @classmethod
+    def get_command_map(cls):
+        return {
+            "greet": {"required_args": ["name"], "method": cls.greet},
+        }
+
+    @classmethod
+    def greet(cls, name: str) -> str:
+        return f"Hello, {name}"
+
+
+host = CommandRegistryHost({
+    "host": "127.0.0.1",
+    "port": "8870",
+    "command_uri": "/cmd",
+    "public_root": ".",
+    "http_base_url": "http://127.0.0.1:8870",
+    "mcp_base_url": "http://127.0.0.1:8873",
+    "mcp_port": 8873,
+    "mcp_path": "/mcp",
+    "options": {"service_name": "example"},
+})
+host.register_service(TimeService)
+host.register_service(GreetingService)
+
+if __name__ == "__main__":
+    host.run_cli()
+```
+
+Each service remains a valid, independently runnable `BaseService`
+subclass. Its `get_command_map()` supplies bound command handlers; the
+host combines those maps and provides CLI commands, ThinHost HTTP
+`/cmd` through `launch`, and MCP through `serve`. Registration uses
+`get_command_map()`, not a service's `run()` or `get_core_command_map()`.
+Command IDs must be unique and must not collide with host commands.
+This is a small integration point for exposing multiple services
+without rewriting their command handlers as web endpoints.
+
+For a complete composable assembly example, see
+[`TestServiceComposable.py`](nodejobs/dependencies/TestServiceComposable.py).
+It currently demonstrates registration with plain command classes;
+the `BaseService` subclasses above demonstrate the same supported
+`get_command_map()` registration interface.
+
+The constructor accepts a `tServerSpec` with all the fields shown above.
+`host` and `port` bind HTTP; `command_uri` selects its command endpoint,
+and `public_root` supplies the web root. `mcp_port` and `mcp_path` configure
+MCP when using `serve`. `http_base_url` and `mcp_base_url` record advertised
+addresses for application use; they do **not** change where either server
+binds or automatically configure a client. Registered handlers can read
+application-specific `options` through
+`CommandRegistryHost.get_server_spec().options`.
+
+The host extends ThinHost's `SimpleWebServer`, so HTTP hosting requires
+`thinhost`. Run the assembly module with `launch` for HTTP or `serve` for
+MCP. Explicit command-line launch arguments override corresponding
+constructor settings. An optional
+`bind_auth_processor()` accepts a pre-invocation processor returning
+`{"status": "ok"}` or a `{"status": "error", ...}` envelope; no
+processor is bound by default. Registrations, host configuration, and
+this binding are currently class-scoped, so configure the host once
+during assembly.
+
 ### Python API use
 ```python
 import sys

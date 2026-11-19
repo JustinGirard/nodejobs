@@ -33,9 +33,40 @@ def _selected_transports() -> set[str]:
 
 
 def test_client_http_server_lifecycle_and_hello():
+    _test_client_service(
+        module="nodejobs.dependencies.TestService",
+        case_name="",
+        http_port=8870,
+        mcp_port=8873,
+        http_launch_args=[
+            "host=127.0.0.1",
+            "port=8870",
+            "path=/cmd",
+        ],
+    )
+
+
+def test_client_composable_server_lifecycle_and_hello():
+    _test_client_service(
+        module="nodejobs.dependencies.TestServiceComposable",
+        case_name="_composable",
+        http_port=8870,
+        mcp_port=8873,
+        http_launch_args=[],
+    )
+
+
+def _test_client_service(
+    *,
+    module: str,
+    case_name: str,
+    http_port: int,
+    mcp_port: int,
+    http_launch_args: list[str],
+):
     repo_root = Path(__file__).resolve().parents[2]
     py = sys.executable
-    lifecycle_dir = repo_root / "test-results" / "client-tests" / "lifecycle"
+    lifecycle_dir = repo_root / "test-results" / "client-tests" / f"lifecycle{case_name}"
     lifecycle_dir.mkdir(parents=True, exist_ok=True)
 
     commands = {
@@ -53,20 +84,18 @@ def test_client_http_server_lifecycle_and_hello():
 
     http_template = {
         "transport": "http",
-        "port": 8870,
+        "port": http_port,
         "path": "/cmd",
         "commands": commands,
         "lifecycle": {
             "db_path": str(lifecycle_dir / "jobs_http.db"),
-            "job_id": "__CLIENT_LIFECYCLE__http_case",
+            "job_id": f"__CLIENT_LIFECYCLE__http_case{case_name}",
             "launch_command": [
                 py,
                 "-m",
-                "nodejobs.dependencies.TestService",
+                module,
                 "launch",
-                "host=127.0.0.1",
-                "port=8870",
-                "path=/cmd",
+                *http_launch_args,
             ],
             "python": py,
             "launch_cwd": str(repo_root),
@@ -74,20 +103,20 @@ def test_client_http_server_lifecycle_and_hello():
     }
     mcp_template = {
         "transport": "mcp",
-        "port": 8873,
+        "port": mcp_port,
         "path": "/mcp",
         "commands": commands,
         "lifecycle": {
             "db_path": str(lifecycle_dir / "jobs_mcp.db"),
-            "job_id": "__CLIENT_LIFECYCLE__mcp_case",
+            "job_id": f"__CLIENT_LIFECYCLE__mcp_case{case_name}",
             "launch_command": [
                 py,
                 "-m",
-                "nodejobs.dependencies.TestService",
+                module,
                 "serve",
                 "transport=http",
                 "host=127.0.0.1",
-                "port=8873",
+                f"port={mcp_port}",
                 "path=/mcp",
             ],
             "python": py,
@@ -101,7 +130,7 @@ def test_client_http_server_lifecycle_and_hello():
         "launch_command": [
             py,
             "-m",
-            "nodejobs.dependencies.TestService",
+            module,
             "serve",
             "transport=http",
             "host=127.0.0.1",
@@ -160,8 +189,8 @@ def test_client_http_server_lifecycle_and_hello():
                     }
                 ).result(timeout=8.0)
                 expected = float(tz_offset) + 10.0
-                dprint(f"PROOF PY mode={mode} request: command_id=now data={{'tz_offset': {tz_offset}}}")
-                dprint(f"PROOF PY mode={mode} response: {out!r} expected={expected!r}")
+                dprint(f"PROOF PY module={module} mode={mode} request: command_id=now data={{'tz_offset': {tz_offset}}}")
+                dprint(f"PROOF PY module={module} mode={mode} response: {out!r} expected={expected!r}")
                 assert isinstance(out, (int, float))
                 assert float(out) == expected
             for kind, expected in expected_fixtures.items():
