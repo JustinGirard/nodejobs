@@ -27,12 +27,18 @@ python -m pip install nodejobs
 
 The job CLI is `python3 -m nodejobs.jobs_service` (not a `nodejobs`
 console-script command). It supports `run`, `status`, `logs`, `list`, and
-`stop`. Use the same `db_path` and `job_id` for subsequent operations:
+`stop`. By default, `Jobs` stores records under
+`~/tmp_decelium_job_database`. Omit `db_path` for ordinary services so
+microproducts using the same account share a job-ID space: a job started by
+one service can be found by ID from another. Set `db_path` only when a
+specific test-isolation or domain requirement calls for separate records;
+then pass the same path to every operation on those jobs. Use the same
+`job_id` for subsequent operations:
 
 ```bash
-python3 -m nodejobs.jobs_service run job_id=example db_path=/tmp/opencode/nodejobs-example command.1=/usr/bin/printf command.2=hello
-python3 -m nodejobs.jobs_service status job_id=example db_path=/tmp/opencode/nodejobs-example
-python3 -m nodejobs.jobs_service logs job_id=example db_path=/tmp/opencode/nodejobs-example
+python3 -m nodejobs.jobs_service run job_id=example command.1=/usr/bin/printf command.2=hello
+python3 -m nodejobs.jobs_service status job_id=example
+python3 -m nodejobs.jobs_service logs job_id=example
 ```
 
 `run` accepts list-style `command.1=...` arguments and returns after
@@ -139,8 +145,8 @@ import sys
 from nodejobs.jobs import Jobs
 from nodejobs.jobdb import JobRecord
 
-# Create a Jobs manager with a specified database path
-jobs_manager = Jobs(db_path="/path/to/job_db/dir")
+# Use the shared default database; specify db_path only for deliberate isolation.
+jobs_manager = Jobs()
 
 # Starts your job -- its status is returned as job_record
 # Tip: use unbuffered Python (-u) for real-time streaming

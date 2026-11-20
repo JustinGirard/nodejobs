@@ -1,5 +1,7 @@
 # nodejobs runtime
 
+For Python commands, activate `/home/justin/projects/venv` by default.
+
 For new Python command servers, use
 `nodejobs/dependencies/command_registry_host.py` as the authoritative
 server template. Register BaseService subclasses with one
