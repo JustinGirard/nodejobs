@@ -1,6 +1,7 @@
 import os
 import json
 import uuid
+import warnings
 import base64
 from typing import Any, Dict, List, Union
 from nodejobs.dependencies.BaseData import BaseData
@@ -369,10 +370,17 @@ class CachingComponent(BaseData):
 
     # --- Updated cache I/O using hooks ---------------------------------------
     def load_cache(self, key: str, prefix: str = None, raw_mode: bool = False) -> Any:
+        """Load a generated hash-named file; prefer load_cache_path."""
+        warnings.warn(
+            "load_cache is pending deprecation; use load_cache_path for named files",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         rel_path = self._generate_cache_filepath(key, prefix)
         return self.load_cache_path(rel_path, raw_mode)
 
     def load_cache_path(self, rel_path: str, raw_mode: bool = False) -> Any:
+        """Load a caller-named JSON file relative to cache_path."""
         session = DataSession(self.data_session)
         dir_rel = os.path.dirname(os.path.join(self.cache_path, rel_path))
         if dir_rel == None or len(dir_rel) == 0:
@@ -392,11 +400,18 @@ class CachingComponent(BaseData):
                 return json.load(f)
 
     def save_cache(self, key: str, data: Dict[str, Any], prefix: str = None) -> None:
+        """Save a generated hash-named file; prefer save_cache_path."""
+        warnings.warn(
+            "save_cache is pending deprecation; use save_cache_path for named files",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         # session = DataSession(self.data_session)
         rel_path = self._generate_cache_filepath(key, prefix)
         return self.save_cache_path(rel_path, data)
 
     def save_cache_path(self, rel_path: str, data: Dict[str, Any]) -> None:
+        """Save a caller-named JSON file relative to cache_path."""
         session = DataSession(self.data_session)
         dir_rel = os.path.dirname(os.path.join(self.cache_path, rel_path))
         if dir_rel == None or len(dir_rel) == 0:
