@@ -371,11 +371,11 @@ class CachingComponent(BaseData):
     # --- Updated cache I/O using hooks ---------------------------------------
     def load_cache(self, key: str, prefix: str = None, raw_mode: bool = False) -> Any:
         """Load a generated hash-named file; prefer load_cache_path."""
-        warnings.warn(
-            "load_cache is pending deprecation; use load_cache_path for named files",
-            DeprecationWarning,
-            stacklevel=2,
-        )
+        # warnings.warn(
+        #     "load_cache is pending deprecation; use load_cache_path for named files",
+        #     DeprecationWarning,
+        #     stacklevel=2,
+        # )
         rel_path = self._generate_cache_filepath(key, prefix)
         return self.load_cache_path(rel_path, raw_mode)
 
@@ -401,11 +401,11 @@ class CachingComponent(BaseData):
 
     def save_cache(self, key: str, data: Dict[str, Any], prefix: str = None) -> None:
         """Save a generated hash-named file; prefer save_cache_path."""
-        warnings.warn(
-            "save_cache is pending deprecation; use save_cache_path for named files",
-            DeprecationWarning,
-            stacklevel=2,
-        )
+        # warnings.warn(
+        #     "save_cache is pending deprecation; use save_cache_path for named files",
+        #     DeprecationWarning,
+        #     stacklevel=2,
+        # )
         # session = DataSession(self.data_session)
         rel_path = self._generate_cache_filepath(key, prefix)
         return self.save_cache_path(rel_path, data)
