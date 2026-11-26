@@ -39,6 +39,7 @@ class InvokeSpec(BaseData):
     server_alias: str
     command_id: str
     data: dict
+    timeout_s: (float, 10.0)
 
     def do_pre_process(self, in_dict):
         out = dict(in_dict)
@@ -53,6 +54,8 @@ class InvokeSpec(BaseData):
             raise Exception("server_alias_required")
         if key == InvokeSpec.command_id and len(value) == 0:
             raise Exception("command_id_required")
+        if key == InvokeSpec.timeout_s and value <= 0:
+            raise Exception("timeout_s_must_be_positive")
         return value, ""
 
 

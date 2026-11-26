@@ -22,7 +22,7 @@ class HttpNetworkService(BaseService):
         if not path.startswith("/"):
             raise Exception("server_path_must_start_with_slash")
         req = {"command_id": str(endpoint_id).strip(), "data": validated_data}
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=invoke.timeout_s) as client:
             resp = await client.post(f"{base_url}{path}", json=req)
         if resp.status_code not in (200, 201):
             raise Exception(f"{resp.status_code}:{resp.text}")
